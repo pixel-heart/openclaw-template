@@ -37,36 +37,7 @@ else
 fi
 
 # ============================================================
-# 2. Anthropic API key
-# ============================================================
-
-if [ -n "$ANTHROPIC_API_KEY" ]; then
-  AUTH_DIR="$OPENCLAW_DIR/agents/main/agent"
-  mkdir -p "$AUTH_DIR"
-  cat > "$AUTH_DIR/auth-profiles.json" << EOF
-{
-  "version": 1,
-  "profiles": {
-    "anthropic:default": {
-      "type": "token",
-      "provider": "anthropic",
-      "token": "$ANTHROPIC_API_KEY"
-    }
-  },
-  "lastGood": { "anthropic": "anthropic:default" },
-  "usageStats": {
-    "anthropic:default": {
-      "lastUsed": $(date +%s)000,
-      "errorCount": 0
-    }
-  }
-}
-EOF
-  echo "✓ Anthropic auth configured"
-fi
-
-# ============================================================
-# 3. Google Workspace (gog CLI)
+# 2. Google Workspace (gog CLI)
 # ============================================================
 
 if [ -n "$GOG_CLIENT_CREDENTIALS_JSON" ] && [ -n "$GOG_REFRESH_TOKEN" ]; then
@@ -106,6 +77,14 @@ if [ ! -f "$CONFIG_FILE" ]; then
   mkdir -p "$OPENCLAW_DIR"
   cat > "$CONFIG_FILE" << CONFIGEOF
 {
+  "auth": {
+    "profiles": {
+      "anthropic:default": {
+        "provider": "anthropic",
+        "mode": "token"
+      }
+    }
+  },
   "agents": {
     "defaults": {
       "model": {
