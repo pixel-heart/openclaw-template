@@ -9,13 +9,11 @@ fi
 
 OPENCLAW_DIR="$OPENCLAW_HOME"
 WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
-export OPENCLAW_CONFIG_PATH="$OPENCLAW_DIR/openclaw.json"
 
 # ============================================================
 # 1. Workspace initialization
 # ============================================================
 
-# Clone workspace repo on first boot (if GITHUB_TOKEN + WORKSPACE_REPO set)
 if [ ! -d "$WORKSPACE_DIR" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "$WORKSPACE_REPO" ]; then
   echo "First boot: cloning workspace..."
   git clone "https://${GITHUB_TOKEN}@github.com/${WORKSPACE_REPO}.git" "$WORKSPACE_DIR"
@@ -25,14 +23,12 @@ if [ ! -d "$WORKSPACE_DIR" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "$WORKSPACE_REPO"
   echo "✓ Workspace cloned from $WORKSPACE_REPO"
 
 elif [ -d "$WORKSPACE_DIR/.git" ] && [ -n "$GITHUB_TOKEN" ]; then
-  # Pull latest on restart
   cd "$WORKSPACE_DIR"
   git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${WORKSPACE_REPO}.git" 2>/dev/null || true
   git pull origin main 2>/dev/null || echo "⚠ Could not pull workspace updates"
   echo "✓ Workspace updated"
 
 else
-  # No repo configured — ensure directory exists
   mkdir -p "$WORKSPACE_DIR"
   echo "✓ Workspace ready (no git repo configured)"
 fi
@@ -49,14 +45,12 @@ if [ -n "$GOG_CLIENT_CREDENTIALS_JSON" ] && [ -n "$GOG_REFRESH_TOKEN" ]; then
   /usr/local/bin/gog auth credentials set "$TEMP_CREDS" 2>/dev/null
   rm -f "$TEMP_CREDS"
 
-  # Import primary account
   TEMP_TOKEN=$(mktemp)
   echo "{\"email\": \"${GOG_ACCOUNT}\", \"refresh_token\": \"$GOG_REFRESH_TOKEN\"}" > "$TEMP_TOKEN"
   /usr/local/bin/gog auth tokens import "$TEMP_TOKEN" 2>/dev/null
   rm -f "$TEMP_TOKEN"
   echo "✓ gog CLI configured for ${GOG_ACCOUNT}"
 
-  # Optional: second account (e.g. agent email)
   if [ -n "$GOG_REFRESH_TOKEN_AGENT" ] && [ -n "$GOG_ACCOUNT_AGENT" ]; then
     TEMP_TOKEN=$(mktemp)
     echo "{\"email\": \"${GOG_ACCOUNT_AGENT}\", \"refresh_token\": \"$GOG_REFRESH_TOKEN_AGENT\"}" > "$TEMP_TOKEN"
@@ -69,86 +63,43 @@ else
 fi
 
 # ============================================================
-# 4. Default config (first boot only)
+# 3. OpenClaw onboard + config
 # ============================================================
 
 CONFIG_FILE="$OPENCLAW_DIR/openclaw.json"
-# Always regenerate config (template manages config, not the user)
-if true; then
-  echo "Creating default openclaw.json..."
-  mkdir -p "$OPENCLAW_DIR"
-  node -e "
-    const fs = require('fs');
-    const cfg = {
-      auth: {
-        profiles: {
-          'anthropic:default': {
-            provider: 'anthropic',
-            mode: 'token'
-          }
-        }
-      },
-      agents: {
-        defaults: {
-          model: { primary: 'anthropic/claude-sonnet-4-5' },
-          workspace: process.env.OPENCLAW_HOME + '/workspace'
-        }
-      },
-      channels: {},
-      gateway: {
-        port: 18789,
-        mode: 'local',
-        bind: 'lan',
-        auth: {
-          mode: 'token',
-          token: '\${GATEWAY_AUTH_TOKEN}'
-        }
-      },
-      commands: { native: 'auto', restart: true }
-    };
-    fs.writeFileSync('$CONFIG_FILE', JSON.stringify(cfg, null, 2));
-  "
 
-  # Inject channel config from env vars
-  if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-    # Use node to patch the JSON (jq not available)
-    node -e "
-      const fs = require('fs');
-      const cfg = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
-      cfg.channels = cfg.channels || {};
-      cfg.channels.telegram = {
-        enabled: true,
-        botToken: '$TELEGRAM_BOT_TOKEN',
-        dmPolicy: 'pairing'
-      };
-      fs.writeFileSync('$CONFIG_FILE', JSON.stringify(cfg, null, 2));
-    "
-    echo "✓ Telegram channel configured"
-  fi
-
-  if [ -n "$DISCORD_BOT_TOKEN" ]; then
-    node -e "
-      const fs = require('fs');
-      const cfg = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
-      cfg.channels = cfg.channels || {};
-      cfg.channels.discord = {
-        enabled: true,
-        botToken: '$DISCORD_BOT_TOKEN'
-      };
-      fs.writeFileSync('$CONFIG_FILE', JSON.stringify(cfg, null, 2));
-    "
-    echo "✓ Discord channel configured"
-  fi
-
-  echo "✓ Default config created"
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "First boot: running openclaw onboard..."
+  npx openclaw onboard --non-interactive \
+    --flow quickstart \
+    --gateway-bind lan \
+    --gateway-port 18789 \
+    --gateway-token "${GATEWAY_AUTH_TOKEN}" \
+    --auth-choice anthropic
+  echo "✓ Onboard complete"
 fi
 
-echo "✓ Setup complete"
-echo "  OPENCLAW_HOME=$OPENCLAW_HOME"
-echo "  Config file: $CONFIG_FILE"
-echo "  Config exists: $(test -f "$CONFIG_FILE" && echo yes || echo no)"
-ls -la "$OPENCLAW_DIR/" 2>/dev/null || echo "  ⚠ OPENCLAW_DIR does not exist"
-echo "Config contents:"
-cat "$CONFIG_FILE"
-echo ""
-echo "Starting gateway..."
+# Post-onboard config patches (idempotent, run every boot)
+echo "Applying config..."
+
+npx openclaw config set gateway.mode local
+npx openclaw config set gateway.bind lan
+npx openclaw config set gateway.port 18789
+
+if [ -n "$GATEWAY_AUTH_TOKEN" ]; then
+  npx openclaw config set gateway.auth.mode token
+  npx openclaw config set gateway.auth.token "\${GATEWAY_AUTH_TOKEN}"
+fi
+
+# Channels
+if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+  npx openclaw config set --json channels.telegram '{"enabled":true,"botToken":"${TELEGRAM_BOT_TOKEN}","dmPolicy":"pairing"}'
+  echo "✓ Telegram configured"
+fi
+
+if [ -n "$DISCORD_BOT_TOKEN" ]; then
+  npx openclaw config set --json channels.discord '{"enabled":true,"botToken":"${DISCORD_BOT_TOKEN}"}'
+  echo "✓ Discord configured"
+fi
+
+echo "✓ Setup complete — starting gateway"

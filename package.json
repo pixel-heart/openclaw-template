@@ -4,7 +4,7 @@
   "private": true,
   "description": "OpenClaw on Railway — one-click deploy",
   "scripts": {
-    "start": "./scripts/setup.sh && npx openclaw gateway run --allow-unconfigured"
+    "start": "./scripts/setup.sh && npx openclaw gateway run"
   },
   "dependencies": {
     "openclaw": "latest"
