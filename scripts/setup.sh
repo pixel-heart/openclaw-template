@@ -85,7 +85,11 @@ if [ ! -f "$CONFIG_FILE" ]; then
     --flow quickstart \
     --gateway-bind lan \
     --gateway-port 18789 \
+    --gateway-auth token \
     --gateway-token "${OPENCLAW_GATEWAY_TOKEN}" \
+    --no-install-daemon \
+    --skip-health \
+    --workspace "$WORKSPACE_DIR" \
     $AUTH_ARGS
   echo "✓ Onboard complete"
 
