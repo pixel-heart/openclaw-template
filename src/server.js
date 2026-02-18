@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const httpProxy = require('http-proxy');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -114,51 +114,50 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// API: list pending pairings (proxy to gateway)
-app.get('/api/pairings', async (req, res) => {
-  try {
-    const resp = await fetch(`${GATEWAY_URL}/api/pairing/pending`, {
-      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
+// Helper: run openclaw CLI command
+function clawCmd(cmd) {
+  return new Promise((resolve) => {
+    exec(`npx openclaw ${cmd}`, {
+      env: {
+        ...process.env,
+        OPENCLAW_HOME: '/data',
+        OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json`,
+      },
+      timeout: 15000,
+    }, (err, stdout, stderr) => {
+      resolve({ ok: !err, stdout: stdout.trim(), stderr: stderr.trim(), code: err?.code });
     });
-    const data = await resp.json();
-    res.json(data);
-  } catch (err) {
-    res.json({ pending: [], error: 'Gateway not ready' });
+  });
+}
+
+// API: gateway status via CLI
+app.get('/api/gateway-status', async (req, res) => {
+  const result = await clawCmd('status');
+  res.json(result);
+});
+
+// API: list pending pairings
+app.get('/api/pairings', async (req, res) => {
+  const result = await clawCmd('pair list --json');
+  try {
+    const parsed = JSON.parse(result.stdout);
+    res.json({ pending: parsed.pending || parsed || [] });
+  } catch {
+    // Fallback: parse text output
+    res.json({ pending: [], raw: result.stdout, ok: result.ok });
   }
 });
 
 // API: approve pairing
 app.post('/api/pairings/:id/approve', async (req, res) => {
-  try {
-    const resp = await fetch(`${GATEWAY_URL}/api/pairing/${req.params.id}/approve`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    const data = await resp.json();
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: 'Gateway not ready' });
-  }
+  const result = await clawCmd(`pair approve ${req.params.id}`);
+  res.json(result);
 });
 
 // API: reject pairing
 app.post('/api/pairings/:id/reject', async (req, res) => {
-  try {
-    const resp = await fetch(`${GATEWAY_URL}/api/pairing/${req.params.id}/reject`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    const data = await resp.json();
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: 'Gateway not ready' });
-  }
+  const result = await clawCmd(`pair reject ${req.params.id}`);
+  res.json(result);
 });
 
 function getChannelStatus() {
