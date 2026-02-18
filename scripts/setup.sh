@@ -2,12 +2,8 @@
 # OpenClaw Railway setup — runs on every container start
 set -e
 
-if [ -z "$OPENCLAW_HOME" ]; then
-  echo "❌ OPENCLAW_HOME not set — add it to your Railway variables"
-  exit 1
-fi
-
-OPENCLAW_DIR="$OPENCLAW_HOME/.openclaw"
+export OPENCLAW_HOME="/data"
+OPENCLAW_DIR="/data/.openclaw"
 WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
 export OPENCLAW_GATEWAY_TOKEN="${GATEWAY_AUTH_TOKEN}"
 
