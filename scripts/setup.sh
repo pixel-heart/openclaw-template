@@ -6,6 +6,7 @@ export OPENCLAW_HOME="/data"
 OPENCLAW_DIR="/data/.openclaw"
 WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
 # OPENCLAW_GATEWAY_TOKEN is set directly as a Railway variable
+export OPENCLAW_CONFIG_PATH="$OPENCLAW_DIR/openclaw.json"
 
 # ============================================================
 # 1. Workspace initialization
