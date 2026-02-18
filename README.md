@@ -98,13 +98,13 @@ Once you have everything ready, click the button:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Pick one | From Anthropic console (recommended) |
-| `ANTHROPIC_TOKEN` | Pick one | From `claude setup-token` |
-| `GITHUB_TOKEN` | ✅ | GitHub PAT with `repo` scope |
-| `GITHUB_WORKSPACE_REPO` | ✅ | Your repo (any format) |
-| `TELEGRAM_BOT_TOKEN` | Pick one | From BotFather |
-| `DISCORD_BOT_TOKEN` | Pick one | From Discord Developer Portal |
-| `OPENCLAW_GATEWAY_TOKEN` | Auto | Auto-generated, secures your gateway |
+| `ANTHROPIC_API_KEY` | 🔀 Pick one | From Anthropic console (recommended) |
+| `ANTHROPIC_TOKEN` | 🔀 Pick one | From `claude setup-token` |
+| `GITHUB_TOKEN` | ✅ Required | GitHub PAT with `repo` scope |
+| `GITHUB_WORKSPACE_REPO` | ✅ Required | Your repo (any format) |
+| `TELEGRAM_BOT_TOKEN` | 🔀 Pick one | From BotFather |
+| `DISCORD_BOT_TOKEN` | 🔀 Pick one | From Discord Developer Portal |
+| `OPENCLAW_GATEWAY_TOKEN` | 🔒 Auto | Auto-generated, secures your gateway |
 | `GIT_EMAIL` | Optional | For commits (default: agent@openclaw.ai) |
 | `GIT_NAME` | Optional | For commits (default: OpenClaw Agent) |
 | `OPENAI_API_KEY` | Optional | For OpenAI models |
@@ -114,8 +114,20 @@ Once you have everything ready, click the button:
 ## After deploy
 
 1. **DM your bot** on Telegram (or Discord)
-2. It will request pairing — visit the Control UI at `https://your-app.up.railway.app/openclaw` to approve
-3. You're live
+2. The bot will reply with a pairing code:
+   ```
+   OpenClaw: access not configured.
+   Your Telegram user id: 123456789
+   Pairing code: ABC123
+   Ask the bot owner to approve with:
+   openclaw pairing approve telegram ABC123
+   ```
+3. **Approve the pairing** — open the Railway deploy logs (or use the Railway CLI to SSH in) and run:
+   ```
+   npx openclaw pairing approve telegram ABC123
+   ```
+   Replace `ABC123` with the actual code from step 2.
+4. DM the bot again — you're live!
 
 Check your GitHub repo — you should see the initial commit with your agent's full config and workspace.
 
@@ -152,7 +164,7 @@ Config exists, gateway starts immediately. Your agent commits and pushes changes
 
 ### Pairing
 
-First time you DM the bot, it needs pairing approval. Visit `https://your-app.up.railway.app/openclaw` and authenticate with your `OPENCLAW_GATEWAY_TOKEN` (find it in Railway variables).
+First time you DM the bot, it replies with a pairing code. You need to approve it by running the command shown in the bot's reply. Use Railway's CLI (`railway shell`) or the deploy logs to run it.
 
 ### Bot doesn't respond
 
