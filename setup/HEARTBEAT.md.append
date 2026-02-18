@@ -1,0 +1,5 @@
+
+
+## Git hygiene
+Check for uncommitted changes: `cd /data/.openclaw && git status --short`
+If there are changes, commit and push them.

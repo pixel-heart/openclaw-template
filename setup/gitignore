@@ -1,0 +1,17 @@
+# Auth & secrets
+agents/*/agent/auth-profiles.json
+credentials/
+*.token
+
+# Logs & caches
+logs/
+canvas/
+*.log
+update-check.json
+
+# Backups
+*.bak
+*.bak.*
+
+# OS
+.DS_Store

@@ -55,24 +55,7 @@ fi
 
 # Ensure .gitignore
 if [ ! -f "$OPENCLAW_DIR/.gitignore" ]; then
-  cat > "$OPENCLAW_DIR/.gitignore" << 'EOF'
-# Auth & secrets
-agents/*/agent/auth-profiles.json
-credentials/
-*.token
-
-# Logs & caches
-logs/
-canvas/
-*.log
-
-# Backups
-*.bak
-*.bak.*
-
-# OS
-.DS_Store
-EOF
+  cp /app/setup/gitignore "$OPENCLAW_DIR/.gitignore"
   echo "✓ Created .gitignore"
 fi
 
@@ -177,28 +160,12 @@ if [ ! -f "$OPENCLAW_CONFIG_PATH" ]; then
   # 6. Append git discipline to workspace files
   # ============================================================
   if ! grep -q "Git Discipline" "$WORKSPACE_DIR/TOOLS.md" 2>/dev/null; then
-    cat >> "$WORKSPACE_DIR/TOOLS.md" << 'TOOLSEOF'
-
-## Git Discipline
-
-**Commit and push after every set of changes.** Your entire .openclaw directory (config, cron, workspace) is version controlled. This is how your work survives container restarts.
-
-```bash
-cd /data/.openclaw && git add -A && git commit -m "description" && git push
-```
-
-Never force push. Always pull before pushing if there might be remote changes.
-TOOLSEOF
+    cat /app/setup/TOOLS.md.append >> "$WORKSPACE_DIR/TOOLS.md"
     echo "✓ Added git discipline to TOOLS.md"
   fi
 
   if ! grep -q "Git hygiene" "$WORKSPACE_DIR/HEARTBEAT.md" 2>/dev/null; then
-    cat >> "$WORKSPACE_DIR/HEARTBEAT.md" << 'HBEOF'
-
-## Git hygiene
-Check for uncommitted changes: `cd /data/.openclaw && git status --short`
-If there are changes, commit and push them.
-HBEOF
+    cat /app/setup/HEARTBEAT.md.append >> "$WORKSPACE_DIR/HEARTBEAT.md"
     echo "✓ Added git hygiene to HEARTBEAT.md"
   fi
 
