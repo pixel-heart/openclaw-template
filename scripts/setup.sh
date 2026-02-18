@@ -9,6 +9,7 @@ fi
 
 OPENCLAW_DIR="$OPENCLAW_HOME/.openclaw"
 WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
+export OPENCLAW_GATEWAY_TOKEN="${GATEWAY_AUTH_TOKEN}"
 
 # ============================================================
 # 1. Workspace initialization
