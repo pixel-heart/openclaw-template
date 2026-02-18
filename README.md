@@ -17,16 +17,18 @@ You need three things ready:
 
 ### 1. Anthropic authentication (pick one)
 
-**Setup token (recommended)** — uses your Claude Pro/Max subscription.
+**Option A: API key (recommended)** — direct billing to your Anthropic account.
+
+1. Go to [console.anthropic.com](https://console.anthropic.com/) → API Keys → Create Key
+
+**Option B: Setup token** — uses your Claude Pro/Max subscription.
 
 1. Install Claude Code: `npm install -g @anthropic-ai/claude-code`
 2. Run `claude` and complete the OAuth login
 3. Run `claude setup-token`
 4. Copy the token
 
-**API key** — direct billing to your Anthropic account.
-
-1. Go to [console.anthropic.com](https://console.anthropic.com/) → API Keys → Create Key
+*Note: Anthropic has stated that using setup tokens outside of Claude Code may violate their terms of service.*
 
 ### 2. GitHub repo
 
@@ -55,8 +57,8 @@ Click the deploy button and fill in:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_TOKEN` | Pick one | From `claude setup-token` (recommended) |
-| `ANTHROPIC_API_KEY` | Pick one | From Anthropic console |
+| `ANTHROPIC_API_KEY` | Pick one | From Anthropic console (recommended) |
+| `ANTHROPIC_TOKEN` | Pick one | From `claude setup-token` |
 | `GITHUB_TOKEN` | ✅ | GitHub PAT with `repo` scope |
 | `GITHUB_WORKSPACE_REPO` | ✅ | e.g. `owner/repo`, `git@github.com:owner/repo.git`, or HTTPS URL |
 | `TELEGRAM_BOT_TOKEN` | Pick one | From BotFather |
