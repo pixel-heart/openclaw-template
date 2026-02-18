@@ -13,6 +13,6 @@
     }
   },
   "deploy": {
-    "startCommand": "chmod +x /app/scripts/setup.sh && npm start"
+    "startCommand": "chmod +x /app/scripts/setup.sh && /app/scripts/setup.sh"
   }
 }
