@@ -206,7 +206,7 @@ if [ ! -f "$OPENCLAW_CONFIG_PATH" ]; then
   echo "Git status after add:"
   git status --short
   git commit -m "initial setup" || echo "⚠ git commit failed"
-  git push -u origin main || echo "⚠ git push failed"
+  git push -u origin main --force || echo "⚠ git push failed"
   echo "✓ Initial state committed and pushed"
 
 else
