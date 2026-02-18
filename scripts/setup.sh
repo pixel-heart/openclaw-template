@@ -72,7 +72,8 @@ fi
 # ============================================================
 
 CONFIG_FILE="$OPENCLAW_DIR/openclaw.json"
-if [ ! -f "$CONFIG_FILE" ]; then
+# Always regenerate config (template manages config, not the user)
+if true; then
   echo "Creating default openclaw.json..."
   mkdir -p "$OPENCLAW_DIR"
   cat > "$CONFIG_FILE" << CONFIGEOF
