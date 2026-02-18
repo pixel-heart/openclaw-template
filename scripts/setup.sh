@@ -97,24 +97,8 @@ else
   echo "Config exists, skipping onboard"
 fi
 
-# Channel config (idempotent, runs every boot)
-if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-  npx openclaw config set --json channels.telegram "{\"enabled\":true,\"botToken\":\"$TELEGRAM_BOT_TOKEN\",\"dmPolicy\":\"pairing\"}"
-  echo "✓ Telegram configured"
-fi
-
-if [ -n "$DISCORD_BOT_TOKEN" ]; then
-  npx openclaw config set --json channels.discord "{\"enabled\":true,\"botToken\":\"$DISCORD_BOT_TOKEN\"}"
-  echo "✓ Discord configured"
-fi
-
-# Debug: show config after channel setup
-echo "=== Config after setup ==="
-cat "$CONFIG_FILE"
-echo ""
-echo "=== End config ==="
-
-# Fix any issues doctor finds
+# Channels are auto-detected by onboard from env vars (TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN)
+# Run doctor --fix to apply any pending changes
 npx openclaw doctor --fix --non-interactive 2>&1 || true
 
 echo "✓ Setup complete — starting gateway"
