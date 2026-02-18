@@ -220,5 +220,5 @@ else
   echo "Config exists, skipping onboard"
 fi
 
-echo "✓ Setup complete — starting gateway"
-exec npx openclaw gateway run
+echo "✓ Setup complete — starting wrapper"
+exec node /app/src/server.js

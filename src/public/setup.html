@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenClaw Setup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      max-width: 520px;
+      width: 100%;
+      padding: 2rem;
+    }
+    .logo {
+      font-size: 2.5rem;
+      margin-bottom: 0.25rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      color: #888;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+    .card {
+      background: #141414;
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .status-dot.green { background: #22c55e; }
+    .status-dot.yellow { background: #eab308; animation: pulse 1.5s infinite; }
+    .status-dot.red { background: #ef4444; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .channel-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    .channel-row:last-child { border-bottom: none; }
+    .channel-name { font-weight: 500; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-weight: 500;
+    }
+    .badge.ok { background: #052e16; color: #22c55e; }
+    .badge.off { background: #1a1a1a; color: #666; }
+
+    .pairing-item {
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .pairing-item .name {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .pairing-item .meta {
+      color: #888;
+      font-size: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .pairing-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-approve { background: #22c55e; color: #000; }
+    .btn-reject { background: #333; color: #e0e0e0; }
+
+    .empty {
+      color: #555;
+      font-size: 0.9rem;
+      text-align: center;
+      padding: 1rem 0;
+    }
+    .instructions {
+      color: #888;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      margin-top: 0.5rem;
+    }
+    .instructions code {
+      background: #1a1a1a;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+    .refresh-note {
+      text-align: center;
+      color: #444;
+      font-size: 0.8rem;
+      margin-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">🐾</div>
+    <h1>OpenClaw</h1>
+    <p class="subtitle">Your agent is deploying. Manage connections below.</p>
+
+    <!-- Gateway Status -->
+    <div class="card">
+      <h2>
+        <span class="status-dot yellow" id="gatewayDot"></span>
+        Gateway: <span id="gatewayStatus">checking...</span>
+      </h2>
+    </div>
+
+    <!-- Channels -->
+    <div class="card">
+      <h2>Channels</h2>
+      <div id="channels">
+        <div class="empty">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Pending Pairings -->
+    <div class="card">
+      <h2>Pending Pairings</h2>
+      <div id="pairings">
+        <div class="empty">No pending pairings</div>
+      </div>
+      <div class="instructions">
+        To connect: send any message to your bot on Telegram or Discord. The pairing request will appear here.
+      </div>
+    </div>
+
+    <p class="refresh-note">Auto-refreshes every 5 seconds</p>
+  </div>
+
+  <script>
+    async function refresh() {
+      try {
+        // Status
+        const statusRes = await fetch('/api/status');
+        const status = await statusRes.json();
+
+        const dot = document.getElementById('gatewayDot');
+        const label = document.getElementById('gatewayStatus');
+        if (status.gateway === 'running') {
+          dot.className = 'status-dot green';
+          label.textContent = 'running';
+        } else {
+          dot.className = 'status-dot yellow';
+          label.textContent = status.gateway;
+        }
+
+        // Channels
+        const channelsEl = document.getElementById('channels');
+        const allChannels = ['telegram', 'discord'];
+        channelsEl.innerHTML = allChannels.map(ch => {
+          const active = status.channels?.[ch];
+          return `<div class="channel-row">
+            <span class="channel-name">${ch.charAt(0).toUpperCase() + ch.slice(1)}</span>
+            <span class="badge ${active ? 'ok' : 'off'}">${active ? 'Connected' : 'Not configured'}</span>
+          </div>`;
+        }).join('');
+
+        // Pairings
+        if (status.gateway === 'running') {
+          const pairRes = await fetch('/api/pairings');
+          const pairData = await pairRes.json();
+          const pairingsEl = document.getElementById('pairings');
+
+          const pending = pairData.pending || pairData.requests || [];
+          if (pending.length === 0) {
+            pairingsEl.innerHTML = '<div class="empty">No pending pairings</div>';
+          } else {
+            pairingsEl.innerHTML = pending.map(p => `
+              <div class="pairing-item">
+                <div class="name">${p.displayName || p.name || p.sender || 'Unknown'}</div>
+                <div class="meta">${p.channel || ''} · ${p.id || p.requestId || ''}</div>
+                <div class="pairing-actions">
+                  <button class="btn btn-approve" onclick="approve('${p.id || p.requestId}')">Approve</button>
+                  <button class="btn btn-reject" onclick="reject('${p.id || p.requestId}')">Reject</button>
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+      } catch (err) {
+        console.error('Refresh failed:', err);
+      }
+    }
+
+    async function approve(id) {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Approving...';
+      try {
+        await fetch(`/api/pairings/${id}/approve`, { method: 'POST' });
+        setTimeout(refresh, 500);
+      } catch (err) {
+        btn.textContent = 'Error';
+      }
+    }
+
+    async function reject(id) {
+      const btn = event.target;
+      btn.disabled = true;
+      try {
+        await fetch(`/api/pairings/${id}/reject`, { method: 'POST' });
+        setTimeout(refresh, 500);
+      } catch (err) {
+        btn.textContent = 'Error';
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

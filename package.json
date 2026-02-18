@@ -7,6 +7,8 @@
     "start": "./scripts/setup.sh"
   },
   "dependencies": {
+    "express": "^4.21.0",
+    "http-proxy": "^1.18.1",
     "openclaw": "latest"
   },
   "engines": {
