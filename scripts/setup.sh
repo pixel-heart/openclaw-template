@@ -23,6 +23,11 @@ fi
 
 mkdir -p "$OPENCLAW_DIR"
 
+# Symlink so ~/.openclaw resolves to /data/.openclaw (for SSH/CLI access)
+if [ ! -L "/root/.openclaw" ] && [ ! -d "/root/.openclaw" ]; then
+  ln -s "$OPENCLAW_DIR" /root/.openclaw
+fi
+
 # Normalize repo input: accept SSH URLs, HTTPS URLs, or owner/repo shorthand
 REPO_URL="$GITHUB_WORKSPACE_REPO"
 # git@github.com:owner/repo.git → owner/repo
