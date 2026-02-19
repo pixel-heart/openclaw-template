@@ -49,8 +49,8 @@
       </div>
     </div>
 
-    <!-- Pending Pairings -->
-    <div class="bg-surface border border-border rounded-xl p-4">
+    <!-- Pending Pairings (hidden when all channels paired) -->
+    <div id="pairingsCard" class="bg-surface border border-border rounded-xl p-4 hidden">
       <h2 class="font-semibold mb-3">Pending Pairings</h2>
       <div id="pairings">
         <div class="text-gray-500 text-sm text-center py-2">No pending pairings</div>
@@ -358,9 +358,16 @@
           </div>`;
         }).join('');
 
-        // Pairings only
+        // Pairings — only show card if a channel is configured but not yet paired
+        const pairingsCard = document.getElementById('pairingsCard');
         const pairingsEl = document.getElementById('pairings');
-        if (status.gateway === 'running') {
+        const hasUnpaired = allChannels.some(ch => {
+          const info = status.channels?.[ch];
+          return info && info.status !== 'paired';
+        });
+        pairingsCard.classList.toggle('hidden', !hasUnpaired);
+
+        if (hasUnpaired && status.gateway === 'running') {
           const pairRes = await fetch('/api/pairings');
           const pairData = await pairRes.json();
           const pending = pairData.pending || [];
