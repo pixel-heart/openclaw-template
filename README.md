@@ -15,10 +15,11 @@ Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegr
 
 Railway will ask for these during deploy. Have them copied and ready to paste:
 
-1. ✅ **Anthropic API key** or **setup token** — for the AI model
-2. ✅ **GitHub personal access token** — for backing up your agent's config and workspace
-3. ✅ **Empty private GitHub repo** — where your agent's state will be pushed
-4. ✅ **Telegram bot token** or **Discord bot token** — so you can talk to your agent
+1. ✅ **Setup password** — to protect your setup UI (`SETUP_PASSWORD`)
+2. ✅ **Anthropic API key** or **setup token** — for the AI model
+3. ✅ **GitHub personal access token** — for backing up your agent's config and workspace
+4. ✅ **Empty private GitHub repo** — where your agent's state will be pushed
+5. ✅ **Telegram bot token** or **Discord bot token** — so you can talk to your agent
 
 ---
 
@@ -116,6 +117,7 @@ Once you have everything ready, click the button:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `SETUP_PASSWORD` | ✅ Required | Password for the setup UI |
 | `ANTHROPIC_API_KEY` | 🔀 Pick one | From Anthropic console (recommended) |
 | `ANTHROPIC_TOKEN` | 🔀 Pick one | From `claude setup-token` |
 | `GITHUB_TOKEN` | ✅ Required | GitHub PAT with `repo` scope |
@@ -125,7 +127,6 @@ Once you have everything ready, click the button:
 | `OPENCLAW_GATEWAY_TOKEN` | 🔒 Auto | Auto-generated, secures your gateway |
 | `PORT` | 🔒 Auto | Set by Railway |
 | `WEBHOOK_TOKEN` | 🔒 Auto | Auto-generated, secures webhook endpoints |
-| `SETUP_PASSWORD` | Optional | Password-protect the setup UI (recommended in production) |
 | `GIT_EMAIL` | Optional | For commits (default: agent@openclaw.ai) |
 | `GIT_NAME` | Optional | For commits (default: OpenClaw Agent) |
 | `OPENAI_API_KEY` | Optional | For OpenAI models + memory embeddings |
