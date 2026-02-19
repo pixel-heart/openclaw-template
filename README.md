@@ -2,7 +2,7 @@
 
 Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegram or Discord, with your entire config and workspace backed up to GitHub.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/2VgcTk?referralCode=jcFhp_)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/_S3bQQ?referralCode=jcFhp_)
 
 ## What you get
 
@@ -72,18 +72,25 @@ Uses your Claude Pro/Max subscription instead of API billing.
 5. Copy the token BotFather gives you (looks like `123456789:AAHdq...`)
 6. Paste it as `TELEGRAM_BOT_TOKEN` during deploy
 
+[Full Telegram setup guide →](https://docs.openclaw.ai/channels/telegram)
+
 </details>
 
 <details>
 <summary><strong>Discord bot token</strong></summary>
 
-1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
-2. **New Application** → name it
-3. Go to **Bot** tab → **Reset Token** → copy it
-4. Enable **Message Content Intent** under Privileged Gateway Intents
-5. Go to **OAuth2** → URL Generator → select `bot` scope + `Send Messages` permission
-6. Open the generated URL to invite the bot to your server
-7. Paste the token as `DISCORD_BOT_TOKEN` during deploy
+1. Go to [discord.com/developers/applications](https://discord.com/developers/applications) → **New Application**
+2. Go to **Bot** tab → set a username for your agent
+3. Under **Privileged Gateway Intents**, enable:
+   - **Message Content Intent** (required)
+   - **Server Members Intent** (recommended)
+4. Scroll up → **Reset Token** → copy the token
+5. Go to **OAuth2** → URL Generator → enable scopes: `bot`, `applications.commands`
+6. Under **Bot Permissions**, enable: View Channels, Send Messages, Read Message History, Embed Links, Attach Files
+7. Copy the generated URL → open it to invite the bot to your server
+8. Paste the token as `DISCORD_BOT_TOKEN` during deploy
+
+[Full Discord setup guide →](https://docs.openclaw.ai/channels/discord)
 
 </details>
 
@@ -103,7 +110,7 @@ Uses your Claude Pro/Max subscription instead of API billing.
 
 Once you have everything ready, click the button:
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/2VgcTk?referralCode=jcFhp_)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/_S3bQQ?referralCode=jcFhp_)
 
 ### All variables
 
