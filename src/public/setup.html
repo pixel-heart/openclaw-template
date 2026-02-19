@@ -167,7 +167,10 @@
     }
 
     function getSelectedScopes() {
-      return Array.from(document.querySelectorAll('.scope-btn.active')).map(b => b.dataset.scope);
+      // Only query visible scope pickers (inline or modal)
+      const container = document.getElementById('inlineScopePicker') || document.getElementById('modalScopePicker');
+      if (!container) return [];
+      return Array.from(container.querySelectorAll('.scope-btn.active')).map(b => b.dataset.scope);
     }
 
     // Style scope buttons
@@ -232,6 +235,7 @@
 
     function startGoogleAuth(email) {
       const scopes = getSelectedScopes();
+      console.log('Selected scopes:', scopes);
       if (scopes.length === 0) { alert('Select at least one service'); return; }
       const authUrl = `/auth/google/start?email=${encodeURIComponent(email)}&services=${scopes.join(',')}`;
       // Must open popup synchronously in click handler to avoid blockers

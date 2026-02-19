@@ -339,6 +339,7 @@ app.get('/auth/google/start', (req, res) => {
 
     // Build scopes from selected services
     const scopes = [...BASE_SCOPES, ...services.map(s => SCOPE_MAP[s]).filter(Boolean)].join(' ');
+    console.log(`[wrapper] Google OAuth scopes: services=${services.join(',')} resolved=${scopes}`);
 
     const redirectUri = `${getBaseUrl(req)}/auth/google/callback`;
     const state = Buffer.from(JSON.stringify({ email, services })).toString('base64url');
