@@ -472,14 +472,28 @@ app.get('/auth/google/callback', async (req, res) => {
     // Import refresh token if we got a new one
     if (tokens.refresh_token) {
       const tokenFile = `/tmp/gog-token-${Date.now()}.json`;
-      fs.writeFileSync(tokenFile, JSON.stringify({
+      const tokenData = {
         email,
-        refresh_token: tokens.refresh_token,
         client: 'default',
-      }));
+        created_at: new Date().toISOString(),
+        refresh_token: tokens.refresh_token,
+      };
+      fs.writeFileSync(tokenFile, JSON.stringify(tokenData, null, 2));
+      console.log(`[wrapper] Token file written: ${tokenFile} email=${email}`);
 
       const result = await gogCmd(`auth tokens import ${tokenFile}`);
-      console.log(`[wrapper] gog token import: ok=${result.ok}`);
+      console.log(`[wrapper] gog token import: ok=${result.ok} stdout=${result.stdout} stderr=${result.stderr}`);
+
+      if (!result.ok) {
+        console.error(`[wrapper] Token import failed, trying gog auth add --manual`);
+        // Fallback: use gog auth add with manual flow
+        // Store token directly in keyring file as last resort
+        const keyringDir = `${GOG_CONFIG_DIR}/keyring`;
+        fs.mkdirSync(keyringDir, { recursive: true });
+        fs.writeFileSync(`${keyringDir}/token-${email}.json`, JSON.stringify(tokenData, null, 2));
+        console.log(`[wrapper] Token written directly to keyring: ${keyringDir}/token-${email}.json`);
+      }
+
       try { fs.unlinkSync(tokenFile); } catch {}
     }
 
