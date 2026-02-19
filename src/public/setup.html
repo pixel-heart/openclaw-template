@@ -201,11 +201,11 @@
           </div>`;
         }).join('');
 
-        // Pairings
+        // Pairings — only poll when gateway is running
+        const pairingsEl = document.getElementById('pairings');
         if (status.gateway === 'running') {
           const pairRes = await fetch('/api/pairings');
           const pairData = await pairRes.json();
-          const pairingsEl = document.getElementById('pairings');
 
           const pending = pairData.pending || pairData.requests || [];
           if (pending.length === 0) {
@@ -213,8 +213,7 @@
           } else {
             pairingsEl.innerHTML = pending.map(p => `
               <div class="pairing-item">
-                <div class="name">${p.displayName || p.name || p.sender || 'Unknown'}</div>
-                <div class="meta">${p.channel || ''} · ${p.id || p.requestId || ''}</div>
+                <div class="name">${(p.channel || 'unknown').charAt(0).toUpperCase() + (p.channel || '').slice(1)} · ${p.code || p.id || '?'}</div>
                 <div class="pairing-actions">
                   <button class="btn btn-approve" onclick="approve('${p.id || p.requestId}', '${p.channel || ''}')">Approve</button>
                   <button class="btn btn-reject" onclick="reject('${p.id || p.requestId}', '${p.channel || ''}')">Reject</button>
