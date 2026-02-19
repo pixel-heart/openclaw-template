@@ -117,6 +117,7 @@ app.get('/api/status', (req, res) => {
 // Helper: run openclaw CLI command
 function clawCmd(cmd) {
   return new Promise((resolve) => {
+    console.log(`[wrapper] Running: npx openclaw ${cmd}`);
     exec(`npx openclaw ${cmd}`, {
       env: {
         ...process.env,
@@ -125,7 +126,9 @@ function clawCmd(cmd) {
       },
       timeout: 15000,
     }, (err, stdout, stderr) => {
-      resolve({ ok: !err, stdout: stdout.trim(), stderr: stderr.trim(), code: err?.code });
+      const result = { ok: !err, stdout: stdout.trim(), stderr: stderr.trim(), code: err?.code };
+      console.log(`[wrapper] Result: ok=${result.ok} stdout=${result.stdout.slice(0, 200)} stderr=${result.stderr.slice(0, 200)}`);
+      resolve(result);
     });
   });
 }
@@ -136,27 +139,95 @@ app.get('/api/gateway-status', async (req, res) => {
   res.json(result);
 });
 
-// API: list pending pairings
+// API: list pending pairings across all channels
 app.get('/api/pairings', async (req, res) => {
-  const result = await clawCmd('pair list --json');
-  try {
-    const parsed = JSON.parse(result.stdout);
-    res.json({ pending: parsed.pending || parsed || [] });
-  } catch {
-    // Fallback: parse text output
-    res.json({ pending: [], raw: result.stdout, ok: result.ok });
+  console.log('[wrapper] Fetching pending pairings...');
+  const channels = ['telegram', 'discord'];
+  const pending = [];
+
+  for (const ch of channels) {
+    // Check if channel is configured
+    try {
+      const config = JSON.parse(fs.readFileSync(`${OPENCLAW_DIR}/openclaw.json`, 'utf8'));
+      if (!config.channels?.[ch]?.enabled) continue;
+    } catch { continue; }
+
+    const result = await clawCmd(`pairing list ${ch}`);
+    console.log(`[wrapper] pairing list ${ch}: ${JSON.stringify(result)}`);
+
+    if (result.ok && result.stdout) {
+      // Parse the CLI text output into structured data
+      // Expected format varies; try to extract code + sender info
+      const lines = result.stdout.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        // Try to parse lines that contain pairing info
+        const codeMatch = line.match(/([A-Z0-9]{8})/);
+        if (codeMatch) {
+          pending.push({
+            id: codeMatch[1],
+            code: codeMatch[1],
+            channel: ch,
+            displayName: line.replace(codeMatch[1], '').trim() || 'Unknown sender',
+            raw: line,
+          });
+        }
+      }
+    }
   }
+
+  // Also check credentials dir directly for pairing files
+  try {
+    const credDir = `${OPENCLAW_DIR}/credentials`;
+    if (fs.existsSync(credDir)) {
+      const files = fs.readdirSync(credDir).filter(f => f.endsWith('-pairing.json'));
+      console.log(`[wrapper] Pairing files found: ${files.join(', ') || 'none'}`);
+      for (const file of files) {
+        try {
+          const data = JSON.parse(fs.readFileSync(`${credDir}/${file}`, 'utf8'));
+          const ch = file.replace('-pairing.json', '');
+          console.log(`[wrapper] ${file} contents: ${JSON.stringify(data).slice(0, 500)}`);
+          // If it's an array or object with pending entries
+          const entries = Array.isArray(data) ? data : Object.values(data);
+          for (const entry of entries) {
+            if (entry.code || entry.pairingCode) {
+              const code = entry.code || entry.pairingCode;
+              // Skip if already found via CLI
+              if (!pending.find(p => p.code === code)) {
+                pending.push({
+                  id: code,
+                  code,
+                  channel: ch,
+                  displayName: entry.displayName || entry.name || entry.sender || entry.senderId || 'Unknown',
+                  sender: entry.senderId || entry.sender,
+                  raw: JSON.stringify(entry),
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`[wrapper] Error reading ${file}: ${e.message}`);
+        }
+      }
+    }
+  } catch (e) {
+    console.log(`[wrapper] Error checking credentials: ${e.message}`);
+  }
+
+  console.log(`[wrapper] Total pending pairings: ${pending.length}`);
+  res.json({ pending });
 });
 
 // API: approve pairing
 app.post('/api/pairings/:id/approve', async (req, res) => {
-  const result = await clawCmd(`pair approve ${req.params.id}`);
+  const channel = req.body.channel || 'telegram';
+  const result = await clawCmd(`pairing approve ${channel} ${req.params.id}`);
   res.json(result);
 });
 
 // API: reject pairing
 app.post('/api/pairings/:id/reject', async (req, res) => {
-  const result = await clawCmd(`pair reject ${req.params.id}`);
+  const channel = req.body.channel || 'telegram';
+  const result = await clawCmd(`pairing reject ${channel} ${req.params.id}`);
   res.json(result);
 });
 

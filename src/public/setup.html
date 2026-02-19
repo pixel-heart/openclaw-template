@@ -216,8 +216,8 @@
                 <div class="name">${p.displayName || p.name || p.sender || 'Unknown'}</div>
                 <div class="meta">${p.channel || ''} · ${p.id || p.requestId || ''}</div>
                 <div class="pairing-actions">
-                  <button class="btn btn-approve" onclick="approve('${p.id || p.requestId}')">Approve</button>
-                  <button class="btn btn-reject" onclick="reject('${p.id || p.requestId}')">Reject</button>
+                  <button class="btn btn-approve" onclick="approve('${p.id || p.requestId}', '${p.channel || ''}')">Approve</button>
+                  <button class="btn btn-reject" onclick="reject('${p.id || p.requestId}', '${p.channel || ''}')">Reject</button>
                 </div>
               </div>
             `).join('');
@@ -228,23 +228,31 @@
       }
     }
 
-    async function approve(id) {
+    async function approve(id, channel) {
       const btn = event.target;
       btn.disabled = true;
       btn.textContent = 'Approving...';
       try {
-        await fetch(`/api/pairings/${id}/approve`, { method: 'POST' });
+        await fetch(`/api/pairings/${id}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel }),
+        });
         setTimeout(refresh, 500);
       } catch (err) {
         btn.textContent = 'Error';
       }
     }
 
-    async function reject(id) {
+    async function reject(id, channel) {
       const btn = event.target;
       btn.disabled = true;
       try {
-        await fetch(`/api/pairings/${id}/reject`, { method: 'POST' });
+        await fetch(`/api/pairings/${id}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel }),
+        });
         setTimeout(refresh, 500);
       } catch (err) {
         btn.textContent = 'Error';
