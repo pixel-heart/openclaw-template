@@ -9,6 +9,7 @@ Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegr
 - **OpenClaw Gateway** running 24/7
 - **Everything version controlled** — config, cron jobs, workspace, and memory backed up to GitHub automatically
 - **Telegram or Discord** configured out of the box (add/remove channels anytime via the UI)
+- **Google Workspace integration** — connect Gmail, Calendar, Drive, Contacts, and Sheets with a few clicks via built-in OAuth flow
 - **Secrets never committed** — raw API keys are replaced with `${ENV_VAR}` references before pushing to GitHub
 - **Setup UI** — web-based onboarding, env var management, channel pairing, and gateway control
 - **Webhook proxy** — single exposed port handles both the setup UI and gateway webhooks
