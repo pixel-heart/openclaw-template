@@ -332,12 +332,6 @@ app.post('/api/onboard', async (req, res) => {
     // Remove nested .git that onboard creates in workspace
     try { fs.rmSync(`${WORKSPACE_DIR}/.git`, { recursive: true, force: true }); } catch {}
 
-    // Run doctor --fix
-    await shellCmd('openclaw doctor --fix --non-interactive', {
-      env: { ...process.env, OPENCLAW_HOME: '/data', OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json` },
-      timeout: 30000,
-    }).catch(() => {});
-
     // 4. Inject channel config, enable commands, sanitize secrets
     const cfg = JSON.parse(fs.readFileSync(`${OPENCLAW_DIR}/openclaw.json`, 'utf8'));
     if (!cfg.channels) cfg.channels = {};
@@ -1013,16 +1007,24 @@ function syncChannelConfig(savedVars) {
     const savedKeys = new Set(savedVars.filter(v => v.value).map(v => v.key));
     let changed = false;
 
+    if (!cfg.plugins) cfg.plugins = {};
+    if (!cfg.plugins.entries) cfg.plugins.entries = {};
+
     for (const [ch, def] of Object.entries(kChannelDefs)) {
-      if (!cfg.channels[ch]) continue;
       const hasToken = savedKeys.has(def.envKey);
 
-      if (hasToken && !cfg.channels[ch].enabled) {
-        cfg.channels[ch].enabled = true;
-        cfg.channels[ch][def.tokenField] = def.envRef;
+      if (hasToken && !cfg.channels[ch]?.enabled) {
+        cfg.channels[ch] = {
+          ...(cfg.channels[ch] || {}),
+          enabled: true,
+          [def.tokenField]: def.envRef,
+          dmPolicy: cfg.channels[ch]?.dmPolicy || 'pairing',
+          groupPolicy: cfg.channels[ch]?.groupPolicy || 'allowlist',
+        };
+        cfg.plugins.entries[ch] = { enabled: true };
         console.log(`[wrapper] Channel ${ch} enabled`);
         changed = true;
-      } else if (!hasToken && (cfg.channels[ch].enabled || cfg.channels[ch][def.tokenField])) {
+      } else if (!hasToken && cfg.channels[ch] && (cfg.channels[ch].enabled || cfg.channels[ch][def.tokenField])) {
         cfg.channels[ch].enabled = false;
         delete cfg.channels[ch][def.tokenField];
         console.log(`[wrapper] Channel ${ch} disabled, token ref removed`);
@@ -1072,8 +1074,17 @@ function getChannelStatus() {
   }
 }
 
-// Everything else → proxy to gateway
-app.all('/webhook/*', (req, res) => proxy.web(req, res));
+// Webhooks → proxy to gateway, promoting query string token to Authorization header
+app.all('/webhook/*', (req, res) => {
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+    delete req.query.token;
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    url.searchParams.delete('token');
+    req.url = url.pathname + url.search;
+  }
+  proxy.web(req, res);
+});
 
 // Proxy non-setup API routes to gateway
 const SETUP_API_PREFIXES = ['/api/status', '/api/pairings', '/api/google', '/api/gateway', '/api/onboard', '/api/env', '/api/auth'];
