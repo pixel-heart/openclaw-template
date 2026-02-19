@@ -31,10 +31,15 @@ const GeneralTab = ({ onSwitchTab }) => {
     return info && info.status !== "paired";
   });
 
-  const hasPaired = ALL_CHANNELS.some((ch) => channels?.[ch]?.status === "paired");
+  const hasPaired = ALL_CHANNELS.some(
+    (ch) => channels?.[ch]?.status === "paired",
+  );
 
   const pairingsPoll = usePolling(
-    async () => { const d = await fetchPairings(); return d.pending || []; },
+    async () => {
+      const d = await fetchPairings();
+      return d.pending || [];
+    },
     1000,
     { enabled: hasUnpaired && gatewayStatus === "running" },
   );
@@ -82,6 +87,20 @@ const GeneralTab = ({ onSwitchTab }) => {
         onReject=${handleReject}
       />
       ${hasPaired && html`<${Google} key=${googleKey} />`}
+
+      <div class="bg-surface border border-border rounded-xl p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="font-semibold text-sm">Gateway Dashboard</h2>
+          </div>
+          <a
+            href="/openclaw"
+            target="_blank"
+            class="text-xs px-2.5 py-1 rounded-lg border border-border text-gray-500 hover:text-gray-300 hover:border-gray-500 transition-colors"
+            >Open</a
+          >
+        </div>
+      </div>
 
       <p class="text-center text-gray-600 text-xs">
         <a
@@ -166,13 +185,15 @@ function App() {
               >
                 ${t === "general" ? "General" : "Envars"}
               </button>
-            `
+            `,
           )}
         </div>
       </div>
 
       <div class="space-y-4 pt-4">
-        ${tab === "general" ? html`<${GeneralTab} onSwitchTab=${setTab} />` : html`<${Envars} />`}
+        ${tab === "general"
+          ? html`<${GeneralTab} onSwitchTab=${setTab} />`
+          : html`<${Envars} />`}
       </div>
     </div>
     <${ToastContainer} />

@@ -248,6 +248,9 @@ app.use('/auth', requireAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Setup page
+app.get('/', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
+});
 app.get('/setup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
