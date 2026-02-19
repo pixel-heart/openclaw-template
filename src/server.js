@@ -117,8 +117,8 @@ app.get('/api/status', (req, res) => {
 // Helper: run openclaw CLI command
 function clawCmd(cmd) {
   return new Promise((resolve) => {
-    console.log(`[wrapper] Running: npx openclaw ${cmd}`);
-    exec(`npx openclaw ${cmd}`, {
+    console.log(`[wrapper] Running: openclaw ${cmd}`);
+    exec(`openclaw ${cmd}`, {
       env: {
         ...process.env,
         OPENCLAW_HOME: '/data',
@@ -143,49 +143,36 @@ app.get('/api/gateway-status', async (req, res) => {
 let pairingCache = { pending: [], ts: 0 };
 const PAIRING_CACHE_TTL = 10000; // 10s
 
-// API: list pending pairings — reads files directly (no CLI)
-app.get('/api/pairings', (req, res) => {
+// API: list pending pairings via CLI
+app.get('/api/pairings', async (req, res) => {
   if (Date.now() - pairingCache.ts < PAIRING_CACHE_TTL) {
     return res.json({ pending: pairingCache.pending });
   }
 
   const pending = [];
-  const credDir = `${OPENCLAW_DIR}/credentials`;
+  const channels = ['telegram', 'discord'];
 
-  try {
-    if (fs.existsSync(credDir)) {
-      const files = fs.readdirSync(credDir).filter(f => f.endsWith('-pairing.json'));
-      for (const file of files) {
-        try {
-          const raw = fs.readFileSync(`${credDir}/${file}`, 'utf8');
-          const data = JSON.parse(raw);
-          const ch = file.replace('-pairing.json', '');
+  for (const ch of channels) {
+    // Check if channel is configured
+    try {
+      const config = JSON.parse(fs.readFileSync(`${OPENCLAW_DIR}/openclaw.json`, 'utf8'));
+      if (!config.channels?.[ch]?.enabled) continue;
+    } catch { continue; }
 
-          // Handle both array and object formats
-          const entries = Array.isArray(data) ? data : Object.values(data).flat();
-          for (const entry of entries) {
-            if (!entry || typeof entry !== 'object') continue;
-            const code = entry.code || entry.pairingCode || entry.id;
-            if (!code) continue;
-
-            // Skip expired (1 hour TTL)
-            if (entry.createdAt && Date.now() - new Date(entry.createdAt).getTime() > 3600000) continue;
-
-            pending.push({
-              id: code,
-              code,
-              channel: ch,
-              displayName: entry.displayName || entry.name || entry.firstName || entry.sender || entry.senderId || 'Unknown',
-              sender: entry.senderId || entry.sender || entry.chatId,
-            });
-          }
-        } catch (e) {
-          console.log(`[wrapper] Error reading ${file}: ${e.message}`);
+    const result = await clawCmd(`pairing list ${ch}`);
+    if (result.ok && result.stdout) {
+      const lines = result.stdout.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        const codeMatch = line.match(/([A-Z0-9]{8})/);
+        if (codeMatch) {
+          pending.push({
+            id: codeMatch[1],
+            code: codeMatch[1],
+            channel: ch,
+          });
         }
       }
     }
-  } catch (e) {
-    console.log(`[wrapper] Error checking credentials: ${e.message}`);
   }
 
   if (pending.length > 0) {

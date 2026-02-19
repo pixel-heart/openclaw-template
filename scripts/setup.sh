@@ -120,14 +120,14 @@ if [ ! -f "$OPENCLAW_CONFIG_PATH" ]; then
     exit 1
   fi
 
-  npx openclaw onboard "${ONBOARD_ARGS[@]}"
+  openclaw onboard "${ONBOARD_ARGS[@]}"
   echo "✓ Onboard complete"
 
   # Remove nested .git that onboard creates in workspace
   rm -rf "$WORKSPACE_DIR/.git" 2>/dev/null || true
 
   # Run doctor --fix (may modify config)
-  npx openclaw doctor --fix --non-interactive 2>&1 || true
+  openclaw doctor --fix --non-interactive 2>&1 || true
 
   # ============================================================
   # 5. Inject channel config + sanitize secrets
