@@ -100,7 +100,7 @@ if [ ! -f "$OPENCLAW_CONFIG_PATH" ]; then
   ONBOARD_ARGS=(
     --non-interactive --accept-risk
     --flow quickstart
-    --gateway-bind localhost
+    --gateway-bind loopback
     --gateway-port 18789
     --gateway-auth token
     --gateway-token "${OPENCLAW_GATEWAY_TOKEN}"
