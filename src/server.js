@@ -355,15 +355,17 @@ app.get('/auth/google/start', (req, res) => {
   const services = (req.query.services || 'gmail:read,gmail:write,calendar:read,calendar:write').split(',').filter(Boolean);
 
   try {
-    // Read credentials — try credentials.json first, fall back to state file
+    // Read client ID from state file (reliable) with credentials.json fallback
     let clientId;
     try {
-      const creds = JSON.parse(fs.readFileSync(GOG_CREDENTIALS_PATH, 'utf8'));
-      clientId = creds.web?.client_id || creds.installed?.client_id;
-    } catch {}
-    if (!clientId) {
       const stateData = JSON.parse(fs.readFileSync(GOG_STATE_PATH, 'utf8'));
       clientId = stateData.clientId;
+    } catch {}
+    if (!clientId) {
+      try {
+        const creds = JSON.parse(fs.readFileSync(GOG_CREDENTIALS_PATH, 'utf8'));
+        clientId = creds.web?.client_id || creds.installed?.client_id;
+      } catch {}
     }
     if (!clientId) throw new Error('No client_id found');
 
@@ -410,17 +412,19 @@ app.get('/auth/google/callback', async (req, res) => {
       email = decoded.email || '';
     } catch {}
 
-    // Read credentials — try credentials.json first, fall back to state file
+    // Read credentials from state file (reliable source) with credentials.json fallback
     let clientId, clientSecret;
     try {
-      const creds = JSON.parse(fs.readFileSync(GOG_CREDENTIALS_PATH, 'utf8'));
-      clientId = creds.web?.client_id || creds.installed?.client_id;
-      clientSecret = creds.web?.client_secret || creds.installed?.client_secret;
+      const stateData = JSON.parse(fs.readFileSync(GOG_STATE_PATH, 'utf8'));
+      clientId = stateData.clientId;
+      clientSecret = stateData.clientSecret;
     } catch {}
     if (!clientId || !clientSecret) {
-      const stateData = JSON.parse(fs.readFileSync(GOG_STATE_PATH, 'utf8'));
-      clientId = clientId || stateData.clientId;
-      clientSecret = clientSecret || stateData.clientSecret;
+      try {
+        const creds = JSON.parse(fs.readFileSync(GOG_CREDENTIALS_PATH, 'utf8'));
+        clientId = clientId || creds.web?.client_id || creds.installed?.client_id;
+        clientSecret = clientSecret || creds.web?.client_secret || creds.installed?.client_secret;
+      } catch {}
     }
     const redirectUri = `${getBaseUrl(req)}/auth/google/callback`;
 
