@@ -1,92 +1,89 @@
 import { h, render } from "https://esm.sh/preact";
-import { useState, useEffect, useCallback } from "https://esm.sh/preact/hooks";
+import { useState, useEffect } from "https://esm.sh/preact/hooks";
 import htm from "https://esm.sh/htm";
 import {
   fetchStatus,
   fetchPairings,
   approvePairing,
   rejectPairing,
+  fetchOnboardStatus,
 } from "./lib/api.js";
+import { usePolling } from "./hooks/usePolling.js";
 import { Gateway } from "./components/gateway.js";
 import { Channels, ALL_CHANNELS } from "./components/channels.js";
 import { Pairings } from "./components/pairings.js";
 import { Google } from "./components/google.js";
+import { Welcome } from "./components/welcome.js";
+import { Envars } from "./components/envars.js";
 import { ToastContainer } from "./components/toast.js";
 const html = htm.bind(h);
 
-function App() {
-  const [gatewayStatus, setGatewayStatus] = useState(null);
-  const [channels, setChannels] = useState(null);
-  const [pending, setPending] = useState([]);
-  const [hasUnpaired, setHasUnpaired] = useState(false);
+const GeneralTab = ({ onSwitchTab }) => {
   const [googleKey, setGoogleKey] = useState(0);
 
-  const refreshPairings = useCallback(async () => {
-    try {
-      const status = await fetchStatus();
-      setGatewayStatus(status.gateway);
-      setChannels(status.channels);
+  const statusPoll = usePolling(fetchStatus, 15000);
+  const status = statusPoll.data;
+  const gatewayStatus = status?.gateway ?? null;
+  const channels = status?.channels ?? null;
 
-      const unpaired = ALL_CHANNELS.some((ch) => {
-        const info = status.channels?.[ch];
-        return info && info.status !== "paired";
-      });
-      setHasUnpaired(unpaired);
+  const hasUnpaired = ALL_CHANNELS.some((ch) => {
+    const info = channels?.[ch];
+    return info && info.status !== "paired";
+  });
 
-      if (unpaired && status.gateway === "running") {
-        const pairData = await fetchPairings();
-        setPending(pairData.pending || []);
-      } else {
-        setPending([]);
-      }
-    } catch (err) {
-      console.error("Refresh failed:", err);
-    }
-  }, []);
+  const hasPaired = ALL_CHANNELS.some((ch) => channels?.[ch]?.status === "paired");
 
+  const pairingsPoll = usePolling(
+    async () => { const d = await fetchPairings(); return d.pending || []; },
+    1000,
+    { enabled: hasUnpaired && gatewayStatus === "running" },
+  );
+  const pending = pairingsPoll.data || [];
+
+  // Poll status faster when gateway isn't running yet
   useEffect(() => {
-    refreshPairings();
-    const interval = setInterval(refreshPairings, 15000);
-    return () => clearInterval(interval);
-  }, [refreshPairings]);
+    if (!gatewayStatus || gatewayStatus !== "running") {
+      const id = setInterval(statusPoll.refresh, 3000);
+      return () => clearInterval(id);
+    }
+  }, [gatewayStatus, statusPoll.refresh]);
+
+  const refreshAfterAction = () => {
+    setTimeout(pairingsPoll.refresh, 500);
+    setTimeout(pairingsPoll.refresh, 2000);
+    setTimeout(statusPoll.refresh, 3000);
+  };
 
   const handleApprove = async (id, channel) => {
     await approvePairing(id, channel);
-    setTimeout(refreshPairings, 500);
+    refreshAfterAction();
   };
 
   const handleReject = async (id, channel) => {
     await rejectPairing(id, channel);
-    setTimeout(refreshPairings, 500);
+    refreshAfterAction();
   };
 
   const fullRefresh = () => {
-    refreshPairings();
+    statusPoll.refresh();
+    pairingsPoll.refresh();
     setGoogleKey((k) => k + 1);
   };
 
   return html`
-    <div class="max-w-lg w-full space-y-4">
-      <div class="flex items-center gap-3">
-        <div class="text-4xl">🦞</div>
-        <div>
-          <h1 class="text-2xl font-semibold">OpenClaw Setup</h1>
-          <p class="text-gray-500 text-sm">This should be easy, right?</p>
-        </div>
-      </div>
-
+    <div class="space-y-4">
       <${Gateway} status=${gatewayStatus} />
-      <${Channels} channels=${channels} />
+      <${Channels} channels=${channels} onSwitchTab=${onSwitchTab} />
       <${Pairings}
         pending=${pending}
+        channels=${channels}
         visible=${hasUnpaired}
         onApprove=${handleApprove}
         onReject=${handleReject}
       />
-      <${Google} key=${googleKey} />
+      ${hasPaired && html`<${Google} key=${googleKey} />`}
 
       <p class="text-center text-gray-600 text-xs">
-        Pairings auto-refresh every 15s ·${" "}
         <a
           href="#"
           onclick=${(e) => {
@@ -97,6 +94,86 @@ function App() {
           >Refresh all</a
         >
       </p>
+    </div>
+  `;
+};
+
+function App() {
+  const [onboarded, setOnboarded] = useState(null);
+  const [tab, setTab] = useState("general");
+
+  useEffect(() => {
+    fetchOnboardStatus()
+      .then((data) => setOnboarded(data.onboarded))
+      .catch(() => setOnboarded(false));
+  }, []);
+
+  // Still loading onboard status
+  if (onboarded === null) {
+    return html`
+      <div class="max-w-lg w-full flex items-center justify-center py-20">
+        <svg
+          class="animate-spin h-6 w-6 text-gray-500"
+          viewBox="0 0 24 24"
+          fill="none"
+        >
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          />
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          />
+        </svg>
+      </div>
+      <${ToastContainer} />
+    `;
+  }
+
+  if (!onboarded) {
+    return html`
+      <${Welcome} onComplete=${() => setOnboarded(true)} />
+      <${ToastContainer} />
+    `;
+  }
+
+  return html`
+    <div class="max-w-lg w-full">
+      <div class="sticky top-0 z-10 bg-[#0a0a0a] pb-3">
+        <div class="flex items-center gap-3 pb-3">
+          <div class="text-4xl">🦞</div>
+          <div>
+            <h1 class="text-2xl font-semibold">OpenClaw Setup</h1>
+            <p class="text-gray-500 text-sm">This should be easy, right?</p>
+          </div>
+        </div>
+
+        <div class="flex gap-1 border-b border-border">
+          ${["general", "envars"].map(
+            (t) => html`
+              <button
+                onclick=${() => setTab(t)}
+                class="px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab ===
+                t
+                  ? "border-white text-white"
+                  : "border-transparent text-gray-500 hover:text-gray-300"}"
+              >
+                ${t === "general" ? "General" : "Envars"}
+              </button>
+            `
+          )}
+        </div>
+      </div>
+
+      <div class="space-y-4 pt-4">
+        ${tab === "general" ? html`<${GeneralTab} onSwitchTab=${setTab} />` : html`<${Envars} />`}
+      </div>
     </div>
     <${ToastContainer} />
   `;

@@ -58,3 +58,36 @@ export async function disconnectGoogle() {
   const res = await authFetch('/api/google/disconnect', { method: 'POST' });
   return res.json();
 }
+
+export async function restartGateway() {
+  const res = await authFetch('/api/gateway/restart', { method: 'POST' });
+  return res.json();
+}
+
+export async function fetchOnboardStatus() {
+  const res = await authFetch('/api/onboard/status');
+  return res.json();
+}
+
+export async function runOnboard(vars) {
+  const res = await authFetch('/api/onboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vars }),
+  });
+  return res.json();
+}
+
+export async function fetchEnvVars() {
+  const res = await authFetch('/api/env');
+  return res.json();
+}
+
+export async function saveEnvVars(vars) {
+  const res = await authFetch('/api/env', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vars }),
+  });
+  return res.json();
+}

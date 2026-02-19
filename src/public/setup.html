@@ -18,13 +18,14 @@
     }
   </script>
   <style>
+    ::placeholder { color: #333; opacity: 1; }
     .scope-btn { background: #1a1a1a; color: #555; border: 1px solid #333; transition: all 0.15s; }
     .scope-btn:hover { border-color: #555; }
     .scope-btn.active { background: #065f46; color: #6ee7b7; border-color: #059669; }
   </style>
 </head>
-<body class="bg-[#0a0a0a] text-gray-200 min-h-screen flex items-center justify-center p-4">
-  <div id="app" class="flex items-center justify-center w-full"></div>
+<body class="bg-[#0a0a0a] text-gray-200 min-h-screen flex justify-center pt-12 pb-8 px-4">
+  <div id="app" class="flex justify-center w-full"></div>
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>

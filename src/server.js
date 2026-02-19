@@ -2,9 +2,10 @@ const express = require('express');
 const http = require('http');
 const httpProxy = require('http-proxy');
 const crypto = require('crypto');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const GATEWAY_PORT = 18789;
@@ -12,66 +13,168 @@ const GATEWAY_HOST = '127.0.0.1';
 const GATEWAY_URL = `http://${GATEWAY_HOST}:${GATEWAY_PORT}`;
 const OPENCLAW_DIR = '/data/.openclaw';
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const ENV_FILE_PATH = '/data/.env';
+const WORKSPACE_DIR = `${OPENCLAW_DIR}/workspace`;
+
+// ============================================================
+// Env var management
+// ============================================================
+
+const kSystemVars = new Set([
+  'WEBHOOK_TOKEN', 'OPENCLAW_GATEWAY_TOKEN', 'SETUP_PASSWORD', 'PORT',
+]);
+
+const kKnownVars = [
+  { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', group: 'ai', hint: 'From console.anthropic.com' },
+  { key: 'ANTHROPIC_TOKEN', label: 'Anthropic Setup Token', group: 'ai', hint: 'From claude setup-token' },
+  { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', group: 'ai', hint: 'From platform.openai.com' },
+  { key: 'GEMINI_API_KEY', label: 'Gemini API Key', group: 'ai', hint: 'From aistudio.google.com' },
+  { key: 'GITHUB_TOKEN', label: 'GitHub PAT', group: 'github', hint: 'With repo scope' },
+  { key: 'GITHUB_WORKSPACE_REPO', label: 'Workspace Repo', group: 'github', hint: 'owner/repo or full URL' },
+  { key: 'TELEGRAM_BOT_TOKEN', label: 'Telegram Bot Token', group: 'channels', hint: 'From @BotFather' },
+  { key: 'DISCORD_BOT_TOKEN', label: 'Discord Bot Token', group: 'channels', hint: 'From Discord Developer Portal' },
+  { key: 'BRAVE_API_KEY', label: 'Brave Search API Key', group: 'tools', hint: 'From brave.com/search/api' },
+];
+
+const kKnownKeys = new Set(kKnownVars.map(v => v.key));
+
+const readEnvFile = () => {
+  try {
+    const content = fs.readFileSync(ENV_FILE_PATH, 'utf8');
+    const vars = [];
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) continue;
+      vars.push({ key: trimmed.slice(0, eqIdx), value: trimmed.slice(eqIdx + 1) });
+    }
+    return vars;
+  } catch {
+    return [];
+  }
+};
+
+const writeEnvFile = (vars) => {
+  const groups = { ai: [], github: [], channels: [], tools: [], custom: [] };
+  for (const { key, value } of vars) {
+    const known = kKnownVars.find(v => v.key === key);
+    const group = known ? known.group : 'custom';
+    groups[group].push({ key, value });
+  }
+  const lines = ['# OpenClaw Environment Variables', '# Edit via the Setup UI or directly in this file', ''];
+  const labels = { ai: 'AI Provider', github: 'GitHub', channels: 'Channels', tools: 'Tools', custom: 'Custom' };
+  for (const [group, entries] of Object.entries(groups)) {
+    if (entries.length === 0) continue;
+    lines.push(`# --- ${labels[group]} ---`);
+    for (const { key, value } of entries) lines.push(`${key}=${value}`);
+    lines.push('');
+  }
+  fs.writeFileSync(ENV_FILE_PATH, lines.join('\n'));
+};
+
+const reloadEnv = () => {
+  const vars = readEnvFile();
+  const fileKeys = new Set(vars.map(v => v.key));
+  let changed = false;
+
+  // Set/update/clear vars from file
+  for (const { key, value } of vars) {
+    if (value && value !== process.env[key]) {
+      console.log(`[wrapper] Env updated: ${key}=${key.toLowerCase().includes('token') || key.toLowerCase().includes('key') || key.toLowerCase().includes('password') ? '***' : value}`);
+      process.env[key] = value;
+      changed = true;
+    } else if (!value && process.env[key]) {
+      console.log(`[wrapper] Env cleared: ${key}`);
+      delete process.env[key];
+      changed = true;
+    }
+  }
+
+  // Remove vars that were deleted from the file entirely
+  const allKnownKeys = kKnownVars.map(v => v.key);
+  for (const key of allKnownKeys) {
+    if (!fileKeys.has(key) && process.env[key]) {
+      console.log(`[wrapper] Env removed: ${key}`);
+      delete process.env[key];
+      changed = true;
+    }
+  }
+
+  return changed;
+};
+
+// Watch /data/.env for external changes (e.g. agent writing placeholders)
+try {
+  fs.watchFile(ENV_FILE_PATH, { interval: 2000 }, () => {
+    console.log('[wrapper] /data/.env changed externally, reloading...');
+    reloadEnv();
+  });
+} catch {};
 
 // ============================================================
 // 1. Start gateway as child process
 // ============================================================
 
-let gatewayProcess = null;
-let gatewayReady = false;
-let gatewayExitCode = null;
+const gatewayEnv = () => ({
+  ...process.env,
+  OPENCLAW_HOME: '/data',
+  OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json`,
+  XDG_CONFIG_HOME: OPENCLAW_DIR,
+});
 
-function startGateway() {
-  // Clean up stale lock/pid files from previous runs
-  for (const f of ['gateway.lock', 'gateway.pid']) {
-    try { fs.unlinkSync(`${OPENCLAW_DIR}/${f}`); } catch {}
+const isOnboarded = () => fs.existsSync(`${OPENCLAW_DIR}/openclaw.json`);
+
+const isGatewayRunning = () => new Promise((resolve) => {
+  const sock = net.createConnection(GATEWAY_PORT, GATEWAY_HOST);
+  sock.setTimeout(1000);
+  sock.on('connect', () => { sock.destroy(); resolve(true); });
+  sock.on('error', () => resolve(false));
+  sock.on('timeout', () => { sock.destroy(); resolve(false); });
+});
+
+const runGatewayCmd = (cmd) => {
+  console.log(`[wrapper] Running: openclaw gateway ${cmd}`);
+  try {
+    const out = execSync(`openclaw gateway ${cmd}`, { env: gatewayEnv(), timeout: 15000, encoding: 'utf8' });
+    if (out.trim()) console.log(`[wrapper] ${out.trim()}`);
+  } catch (e) {
+    if (e.stdout?.trim()) console.log(`[wrapper] gateway ${cmd} stdout: ${e.stdout.trim()}`);
+    if (e.stderr?.trim()) console.log(`[wrapper] gateway ${cmd} stderr: ${e.stderr.trim()}`);
+    if (!e.stdout?.trim() && !e.stderr?.trim()) console.log(`[wrapper] gateway ${cmd} error: ${e.message}`);
+    console.log(`[wrapper] gateway ${cmd} exit code: ${e.status}`);
+  }
+};
+
+async function startGateway() {
+  if (!isOnboarded()) {
+    console.log('[wrapper] Not onboarded yet — skipping gateway start');
+    return;
+  }
+  if (await isGatewayRunning()) {
+    console.log('[wrapper] Gateway already running — skipping start');
+    return;
   }
   console.log('[wrapper] Starting openclaw gateway...');
-  gatewayProcess = spawn('openclaw', ['gateway', 'run'], {
-    env: {
-      ...process.env,
-      OPENCLAW_HOME: '/data',
-      OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json`,
-      XDG_CONFIG_HOME: OPENCLAW_DIR,
-      GOG_KEYRING_PASSWORD,
-    },
+  const child = spawn('openclaw', ['gateway', 'run'], {
+    env: gatewayEnv(),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-
-  gatewayProcess.stdout.on('data', (d) => {
-    const line = d.toString();
-    process.stdout.write(`[gateway] ${line}`);
-    if (line.includes('Gateway listening') || line.includes('ready')) {
-      gatewayReady = true;
-    }
-  });
-
-  gatewayProcess.stderr.on('data', (d) => {
-    process.stderr.write(`[gateway] ${d}`);
-  });
-
-  gatewayProcess.on('exit', (code) => {
-    console.log(`[wrapper] Gateway exited with code ${code}`);
-    gatewayReady = false;
-    gatewayExitCode = code;
-    // Restart after a delay unless we're shutting down
-    if (!shuttingDown) {
-      setTimeout(() => startGateway(), 3000);
-    }
+  child.stdout.on('data', (d) => process.stdout.write(`[gateway] ${d}`));
+  child.stderr.on('data', (d) => process.stderr.write(`[gateway] ${d}`));
+  child.on('exit', (code) => {
+    console.log(`[wrapper] Gateway launcher exited with code ${code}`);
   });
 }
 
-let shuttingDown = false;
-process.on('SIGTERM', () => {
-  shuttingDown = true;
-  if (gatewayProcess) gatewayProcess.kill('SIGTERM');
-  process.exit(0);
-});
-process.on('SIGINT', () => {
-  shuttingDown = true;
-  if (gatewayProcess) gatewayProcess.kill('SIGINT');
-  process.exit(0);
-});
+function restartGateway() {
+  reloadEnv();
+  runGatewayCmd('install --force');
+  runGatewayCmd('restart');
+}
+
+process.on('SIGTERM', () => { runGatewayCmd('stop'); process.exit(0); });
+process.on('SIGINT', () => { runGatewayCmd('stop'); process.exit(0); });
 
 // ============================================================
 // 2. Reverse proxy to gateway
@@ -86,7 +189,7 @@ const proxy = httpProxy.createProxyServer({
 proxy.on('error', (err, req, res) => {
   if (res && res.writeHead) {
     res.writeHead(502, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Gateway unavailable', starting: !gatewayReady }));
+    res.end(JSON.stringify({ error: 'Gateway unavailable' }));
   }
 });
 
@@ -109,10 +212,11 @@ const cookieParser = (req) => {
 };
 
 // Health check (always public)
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  const running = await isGatewayRunning();
   res.json({
-    status: gatewayReady ? 'healthy' : 'starting',
-    gateway: gatewayReady ? 'running' : (gatewayExitCode !== null ? `exited(${gatewayExitCode})` : 'starting'),
+    status: running ? 'healthy' : 'starting',
+    gateway: running ? 'running' : 'starting',
   });
 });
 
@@ -148,11 +252,249 @@ app.get('/setup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
+// API: onboard status
+app.get('/api/onboard/status', (req, res) => {
+  res.json({ onboarded: isOnboarded() });
+});
+
+// API: run onboarding (ports setup.sh first-boot logic to Node)
+app.post('/api/onboard', async (req, res) => {
+  if (isOnboarded()) return res.json({ ok: false, error: 'Already onboarded' });
+
+  const { vars } = req.body;
+  if (!Array.isArray(vars)) return res.status(400).json({ ok: false, error: 'Missing vars array' });
+
+  const varMap = Object.fromEntries(vars.map(v => [v.key, v.value]));
+
+  // Validate minimum requirements
+  const hasAi = !!(varMap.ANTHROPIC_API_KEY || varMap.ANTHROPIC_TOKEN || varMap.OPENAI_API_KEY || varMap.GEMINI_API_KEY);
+  const hasGithub = !!(varMap.GITHUB_TOKEN && varMap.GITHUB_WORKSPACE_REPO);
+  const hasChannel = !!(varMap.TELEGRAM_BOT_TOKEN || varMap.DISCORD_BOT_TOKEN);
+  if (!hasAi) return res.status(400).json({ ok: false, error: 'At least one AI provider key is required' });
+  if (!hasGithub) return res.status(400).json({ ok: false, error: 'GitHub token and workspace repo are required' });
+  if (!hasChannel) return res.status(400).json({ ok: false, error: 'At least one channel token is required' });
+
+  try {
+    // 1. Save vars to /data/.env and reload into process.env
+    writeEnvFile(vars.filter(v => v.value));
+    reloadEnv();
+
+    // 2. Git init
+    const repoUrl = (varMap.GITHUB_WORKSPACE_REPO || '')
+      .replace(/^git@github\.com:/, '')
+      .replace(/^https:\/\/github\.com\//, '')
+      .replace(/\.git$/, '');
+    const remoteUrl = `https://${varMap.GITHUB_TOKEN}@github.com/${repoUrl}.git`;
+
+    fs.mkdirSync(OPENCLAW_DIR, { recursive: true });
+    fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+
+    if (!fs.existsSync(`${OPENCLAW_DIR}/.git`)) {
+      await shellCmd(`cd ${OPENCLAW_DIR} && git init -b main && git remote add origin "${remoteUrl}" && git config user.email "agent@openclaw.ai" && git config user.name "OpenClaw Agent"`);
+      console.log('[onboard] Git initialized');
+    }
+
+    // Ensure .gitignore
+    if (!fs.existsSync(`${OPENCLAW_DIR}/.gitignore`)) {
+      fs.copyFileSync('/app/setup/gitignore', `${OPENCLAW_DIR}/.gitignore`);
+    }
+
+    // 3. Run openclaw onboard
+    const onboardArgs = [
+      '--non-interactive', '--accept-risk',
+      '--flow', 'quickstart',
+      '--gateway-bind', 'loopback',
+      '--gateway-port', '18789',
+      '--gateway-auth', 'token',
+      '--gateway-token', varMap.OPENCLAW_GATEWAY_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || '',
+      '--no-install-daemon',
+      '--skip-health',
+      '--workspace', WORKSPACE_DIR,
+    ];
+
+    if (varMap.ANTHROPIC_TOKEN || process.env.ANTHROPIC_TOKEN) {
+      onboardArgs.push('--auth-choice', 'token', '--token-provider', 'anthropic', '--token', varMap.ANTHROPIC_TOKEN || process.env.ANTHROPIC_TOKEN);
+    } else if (varMap.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY) {
+      onboardArgs.push('--auth-choice', 'apiKey', '--anthropic-api-key', varMap.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY);
+    } else if (varMap.OPENAI_API_KEY || process.env.OPENAI_API_KEY) {
+      onboardArgs.push('--auth-choice', 'apiKey', '--openai-api-key', varMap.OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+    } else if (varMap.GEMINI_API_KEY || process.env.GEMINI_API_KEY) {
+      onboardArgs.push('--auth-choice', 'apiKey', '--gemini-api-key', varMap.GEMINI_API_KEY || process.env.GEMINI_API_KEY);
+    }
+
+    console.log(`[onboard] Running: openclaw onboard ${onboardArgs.join(' ').replace(/sk-[^\s]+/g, '***')}`);
+    await shellCmd(`openclaw onboard ${onboardArgs.map(a => `"${a}"`).join(' ')}`, {
+      env: { ...process.env, OPENCLAW_HOME: '/data', OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json` },
+      timeout: 120000,
+    });
+    console.log('[onboard] Onboard complete');
+
+    // Remove nested .git that onboard creates in workspace
+    try { fs.rmSync(`${WORKSPACE_DIR}/.git`, { recursive: true, force: true }); } catch {}
+
+    // Run doctor --fix
+    await shellCmd('openclaw doctor --fix --non-interactive', {
+      env: { ...process.env, OPENCLAW_HOME: '/data', OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json` },
+      timeout: 30000,
+    }).catch(() => {});
+
+    // 4. Inject channel config, enable commands, sanitize secrets
+    const cfg = JSON.parse(fs.readFileSync(`${OPENCLAW_DIR}/openclaw.json`, 'utf8'));
+    if (!cfg.channels) cfg.channels = {};
+    if (!cfg.plugins) cfg.plugins = {};
+    if (!cfg.plugins.entries) cfg.plugins.entries = {};
+    if (!cfg.commands) cfg.commands = {};
+    cfg.commands.restart = true;
+
+    if (varMap.TELEGRAM_BOT_TOKEN) {
+      cfg.channels.telegram = { enabled: true, botToken: varMap.TELEGRAM_BOT_TOKEN, dmPolicy: 'pairing', groupPolicy: 'allowlist' };
+      cfg.plugins.entries.telegram = { enabled: true };
+      console.log('[onboard] Telegram configured');
+    }
+    if (varMap.DISCORD_BOT_TOKEN) {
+      cfg.channels.discord = { enabled: true, token: varMap.DISCORD_BOT_TOKEN, dmPolicy: 'pairing', groupPolicy: 'allowlist' };
+      cfg.plugins.entries.discord = { enabled: true };
+      console.log('[onboard] Discord configured');
+    }
+
+    let content = JSON.stringify(cfg, null, 2);
+
+    const replacements = [
+      [process.env.OPENCLAW_GATEWAY_TOKEN, '${OPENCLAW_GATEWAY_TOKEN}'],
+      [varMap.ANTHROPIC_API_KEY, '${ANTHROPIC_API_KEY}'],
+      [varMap.ANTHROPIC_TOKEN, '${ANTHROPIC_TOKEN}'],
+      [varMap.TELEGRAM_BOT_TOKEN, '${TELEGRAM_BOT_TOKEN}'],
+      [varMap.DISCORD_BOT_TOKEN, '${DISCORD_BOT_TOKEN}'],
+      [varMap.OPENAI_API_KEY, '${OPENAI_API_KEY}'],
+      [varMap.GEMINI_API_KEY, '${GEMINI_API_KEY}'],
+      [varMap.BRAVE_API_KEY, '${BRAVE_API_KEY}'],
+    ];
+
+    for (const [secret, envRef] of replacements) {
+      if (secret && secret.length > 8) {
+        content = content.split(secret).join(envRef);
+      }
+    }
+
+    fs.writeFileSync(`${OPENCLAW_DIR}/openclaw.json`, content);
+    console.log('[onboard] Config sanitized');
+
+    // 5. Append to TOOLS.md and HEARTBEAT.md
+    const toolsMd = `${WORKSPACE_DIR}/TOOLS.md`;
+    const heartbeatMd = `${WORKSPACE_DIR}/HEARTBEAT.md`;
+
+    try {
+      const toolsContent = fs.existsSync(toolsMd) ? fs.readFileSync(toolsMd, 'utf8') : '';
+      if (!toolsContent.includes('Git Discipline')) {
+        fs.appendFileSync(toolsMd, fs.readFileSync('/app/setup/TOOLS.md.append', 'utf8'));
+      }
+    } catch (e) { console.error('[onboard] TOOLS.md append error:', e.message); }
+
+    try {
+      const heartbeatContent = fs.existsSync(heartbeatMd) ? fs.readFileSync(heartbeatMd, 'utf8') : '';
+      if (!heartbeatContent.includes('Git hygiene')) {
+        fs.appendFileSync(heartbeatMd, fs.readFileSync('/app/setup/HEARTBEAT.md.append', 'utf8'));
+      }
+    } catch (e) { console.error('[onboard] HEARTBEAT.md append error:', e.message); }
+
+    // 6. Install control-ui skill with real server URL
+    try {
+      const baseUrl = getBaseUrl(req);
+      const skillDir = `${OPENCLAW_DIR}/skills/control-ui`;
+      fs.mkdirSync(skillDir, { recursive: true });
+      const skillTemplate = fs.readFileSync('/app/setup/skills/control-ui/SKILL.md', 'utf8');
+      const skillContent = skillTemplate.replace(/\{\{BASE_URL\}\}/g, baseUrl);
+      fs.writeFileSync(`${skillDir}/SKILL.md`, skillContent);
+      console.log(`[onboard] Control UI skill installed (${baseUrl})`);
+    } catch (e) { console.error('[onboard] Skill install error:', e.message); }
+
+    // 7. Git commit + push
+    await shellCmd(`cd ${OPENCLAW_DIR} && git add -A && git commit -m "initial setup" && git push -u origin main --force`, { timeout: 30000 })
+      .catch(e => console.error('[onboard] Git push error:', e.message));
+    console.log('[onboard] Initial state committed and pushed');
+
+    // 7. Start the gateway
+    startGateway();
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[onboard] Error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Shell command helper for onboarding
+const shellCmd = (cmd, opts = {}) => new Promise((resolve, reject) => {
+  console.log(`[onboard] Running: ${cmd.replace(/ghp_[^\s"]+/g, '***').replace(/sk-[^\s"]+/g, '***').slice(0, 200)}`);
+  exec(cmd, { timeout: 60000, ...opts }, (err, stdout, stderr) => {
+    if (err) {
+      console.error(`[onboard] Error: ${(stderr || err.message).slice(0, 300)}`);
+      return reject(err);
+    }
+    if (stdout.trim()) console.log(`[onboard] ${stdout.trim().slice(0, 300)}`);
+    resolve(stdout.trim());
+  });
+});
+
+// API: env vars
+app.get('/api/env', (req, res) => {
+  const fileVars = readEnvFile();
+  const merged = [];
+
+  // Add known vars (in defined order)
+  for (const def of kKnownVars) {
+    const fileEntry = fileVars.find(v => v.key === def.key);
+    const value = fileEntry?.value || '';
+    merged.push({
+      key: def.key,
+      value,
+      label: def.label,
+      group: def.group,
+      hint: def.hint,
+      source: fileEntry?.value ? 'env_file' : 'unset',
+      editable: true,
+    });
+  }
+
+  // Add custom vars from file that aren't known or system
+  for (const v of fileVars) {
+    if (kKnownKeys.has(v.key) || kSystemVars.has(v.key)) continue;
+    merged.push({
+      key: v.key,
+      value: v.value,
+      label: v.key,
+      group: 'custom',
+      hint: '',
+      source: 'env_file',
+      editable: true,
+    });
+  }
+
+  res.json({ vars: merged });
+});
+
+app.put('/api/env', (req, res) => {
+  const { vars } = req.body;
+  if (!Array.isArray(vars)) return res.status(400).json({ ok: false, error: 'Missing vars array' });
+
+  // Filter out system vars
+  const filtered = vars.filter(v => !kSystemVars.has(v.key));
+  writeEnvFile(filtered);
+  const changed = reloadEnv();
+  console.log(`[wrapper] Env vars saved (${filtered.length} vars, changed=${changed})`);
+
+  // Sync channel enabled flags in openclaw.json based on token presence
+  syncChannelConfig(filtered);
+
+  res.json({ ok: true, changed });
+});
+
 // API: gateway status
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
   const configExists = fs.existsSync(`${OPENCLAW_DIR}/openclaw.json`);
+  const running = await isGatewayRunning();
   res.json({
-    gateway: gatewayReady ? 'running' : 'starting',
+    gateway: running ? 'running' : (configExists ? 'starting' : 'not_onboarded'),
     configExists,
     channels: getChannelStatus(),
   });
@@ -163,11 +505,7 @@ function clawCmd(cmd, { quiet = false } = {}) {
   return new Promise((resolve) => {
     if (!quiet) console.log(`[wrapper] Running: openclaw ${cmd}`);
     exec(`openclaw ${cmd}`, {
-      env: {
-        ...process.env,
-        OPENCLAW_HOME: '/data',
-        OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json`,
-      },
+      env: gatewayEnv(),
       timeout: 15000,
     }, (err, stdout, stderr) => {
       const result = { ok: !err, stdout: stdout.trim(), stderr: stderr.trim(), code: err?.code };
@@ -181,6 +519,13 @@ function clawCmd(cmd, { quiet = false } = {}) {
 app.get('/api/gateway-status', async (req, res) => {
   const result = await clawCmd('status');
   res.json(result);
+});
+
+// API: restart gateway
+app.post('/api/gateway/restart', (req, res) => {
+  if (!isOnboarded()) return res.status(400).json({ ok: false, error: 'Not onboarded' });
+  restartGateway();
+  res.json({ ok: true });
 });
 
 // Cache for pairing results (avoid spawning CLI every poll)
@@ -296,7 +641,7 @@ function readGoogleCredentials() {
 
 // API: Google auth status
 app.get('/api/google/status', async (req, res) => {
-  if (!gatewayReady) {
+  if (!(await isGatewayRunning())) {
     return res.json({ hasCredentials: false, authenticated: false, email: '', services: '' });
   }
   const hasCredentials = fs.existsSync(GOG_CREDENTIALS_PATH);
@@ -655,6 +1000,44 @@ function getBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+const kChannelDefs = {
+  telegram: { envKey: 'TELEGRAM_BOT_TOKEN', tokenField: 'botToken', envRef: '${TELEGRAM_BOT_TOKEN}' },
+  discord:  { envKey: 'DISCORD_BOT_TOKEN',  tokenField: 'token',    envRef: '${DISCORD_BOT_TOKEN}' },
+};
+
+function syncChannelConfig(savedVars) {
+  const configPath = `${OPENCLAW_DIR}/openclaw.json`;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!cfg.channels) return;
+    const savedKeys = new Set(savedVars.filter(v => v.value).map(v => v.key));
+    let changed = false;
+
+    for (const [ch, def] of Object.entries(kChannelDefs)) {
+      if (!cfg.channels[ch]) continue;
+      const hasToken = savedKeys.has(def.envKey);
+
+      if (hasToken && !cfg.channels[ch].enabled) {
+        cfg.channels[ch].enabled = true;
+        cfg.channels[ch][def.tokenField] = def.envRef;
+        console.log(`[wrapper] Channel ${ch} enabled`);
+        changed = true;
+      } else if (!hasToken && (cfg.channels[ch].enabled || cfg.channels[ch][def.tokenField])) {
+        cfg.channels[ch].enabled = false;
+        delete cfg.channels[ch][def.tokenField];
+        console.log(`[wrapper] Channel ${ch} disabled, token ref removed`);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
+    }
+  } catch (e) {
+    console.error('[wrapper] syncChannelConfig error:', e.message);
+  }
+}
+
 function getChannelStatus() {
   try {
     const config = JSON.parse(fs.readFileSync(`${OPENCLAW_DIR}/openclaw.json`, 'utf8'));
@@ -663,6 +1046,7 @@ function getChannelStatus() {
 
     for (const ch of ['telegram', 'discord']) {
       if (!config.channels?.[ch]?.enabled) continue;
+      if (!process.env[kChannelDefs[ch].envKey]) continue;
 
       // Check for paired users (credential files + inline allowFrom in config)
       let paired = 0;
@@ -692,7 +1076,7 @@ function getChannelStatus() {
 app.all('/webhook/*', (req, res) => proxy.web(req, res));
 
 // Proxy non-setup API routes to gateway
-const SETUP_API_PREFIXES = ['/api/status', '/api/pairings', '/api/google', '/api/gateway'];
+const SETUP_API_PREFIXES = ['/api/status', '/api/pairings', '/api/google', '/api/gateway', '/api/onboard', '/api/env', '/api/auth'];
 app.all('/api/*', (req, res) => {
   if (SETUP_API_PREFIXES.some(p => req.path.startsWith(p))) return;
   proxy.web(req, res);
@@ -711,5 +1095,11 @@ server.on('upgrade', (req, socket, head) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[wrapper] Express listening on :${PORT}`);
-  startGateway();
+  if (isOnboarded()) {
+    reloadEnv();
+    syncChannelConfig(readEnvFile());
+    startGateway();
+  } else {
+    console.log('[wrapper] Awaiting onboarding via Setup UI');
+  }
 });
