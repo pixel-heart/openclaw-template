@@ -4,9 +4,16 @@
   "private": true,
   "description": "OpenClaw on Railway — one-click deploy",
   "scripts": {
-    "start": "./scripts/setup.sh"
+    "start": "./scripts/setup.sh",
+    "dev": "docker compose up --build",
+    "dev:stop": "docker compose down",
+    "dev:clean": "docker compose down -v",
+    "dev:logs": "docker compose logs -f",
+    "dev:shell": "docker compose exec openclaw bash"
   },
   "dependencies": {
+    "express": "^4.21.0",
+    "http-proxy": "^1.18.1",
     "openclaw": "latest"
   },
   "engines": {
