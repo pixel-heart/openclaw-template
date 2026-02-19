@@ -340,11 +340,11 @@ app.post('/api/google/credentials', async (req, res) => {
 
 // API: Check which Google APIs are enabled (on-demand, not polled)
 const API_TEST_COMMANDS = {
-  gmail: 'gmail labels list --max 1',
-  calendar: 'calendar calendars --max 1',
-  drive: 'drive ls --max 1',
-  contacts: 'contacts list --max 1',
-  sheets: 'sheets list --max 1',
+  gmail: 'gmail labels list',
+  calendar: 'calendar calendars',
+  drive: 'drive ls',
+  contacts: 'contacts list',
+  sheets: 'sheets list',
 };
 
 app.get('/api/google/check', async (req, res) => {
