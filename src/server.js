@@ -376,7 +376,7 @@ app.get('/api/google/check', async (req, res) => {
     } else if (result.ok) {
       results[svc] = { status: 'ok' };
     } else {
-      results[svc] = { status: 'error', message: result.stderr?.slice(0, 200) };
+      results[svc] = { status: 'error', message: result.stderr?.slice(0, 200), enableUrl: getApiEnableUrl(svc) };
     }
   }
 
