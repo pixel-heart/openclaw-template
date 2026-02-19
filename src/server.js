@@ -1077,6 +1077,17 @@ function getChannelStatus() {
   }
 }
 
+// Gateway control UI + assets → proxy to gateway
+app.all('/openclaw', (req, res) => {
+  req.url = '/';
+  proxy.web(req, res);
+});
+app.all('/openclaw/*', (req, res) => {
+  req.url = req.url.replace(/^\/openclaw/, '');
+  proxy.web(req, res);
+});
+app.all('/assets/*', (req, res) => proxy.web(req, res));
+
 // Webhooks → proxy to gateway, promoting query string token to Authorization header
 app.all('/webhook/*', (req, res) => {
   if (!req.headers.authorization && req.query.token) {
