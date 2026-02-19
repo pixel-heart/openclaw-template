@@ -233,6 +233,19 @@ function gogCmd(cmd, { quiet = false } = {}) {
   });
 }
 
+// Read Google OAuth credentials from credentials.json (handles all formats)
+function readGoogleCredentials() {
+  try {
+    const c = JSON.parse(fs.readFileSync(GOG_CREDENTIALS_PATH, 'utf8'));
+    return {
+      clientId: c.web?.client_id || c.installed?.client_id || c.client_id || null,
+      clientSecret: c.web?.client_secret || c.installed?.client_secret || c.client_secret || null,
+    };
+  } catch {
+    return { clientId: null, clientSecret: null };
+  }
+}
+
 // API: Google auth status
 app.get('/api/google/status', async (req, res) => {
   if (!gatewayReady) {
@@ -310,9 +323,9 @@ app.post('/api/google/credentials', async (req, res) => {
       fs.writeFileSync(GOG_CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
     }
 
-    // Save state (includes credentials as fallback for OAuth flow)
-    const services = req.body.services || ['gmail', 'calendar'];
-    fs.writeFileSync(GOG_STATE_PATH, JSON.stringify({ email, clientId, clientSecret, services }));
+    // Save UI state (email, selected services — credentials stay in credentials.json)
+    const services = req.body.services || ['gmail:read', 'gmail:write', 'calendar:read', 'calendar:write'];
+    fs.writeFileSync(GOG_STATE_PATH, JSON.stringify({ email, services }));
 
     res.json({ ok: true });
   } catch (err) {
@@ -357,18 +370,7 @@ app.get('/auth/google/start', (req, res) => {
   const services = (req.query.services || 'gmail:read,gmail:write,calendar:read,calendar:write').split(',').filter(Boolean);
 
   try {
-    // Read client ID from state file (reliable) with credentials.json fallback
-    let clientId;
-    try {
-      const stateData = JSON.parse(fs.readFileSync(GOG_STATE_PATH, 'utf8'));
-      clientId = stateData.clientId;
-    } catch {}
-    if (!clientId) {
-      try {
-        const creds = JSON.parse(fs.readFileSync(GOG_CREDENTIALS_PATH, 'utf8'));
-        clientId = creds.web?.client_id || creds.installed?.client_id;
-      } catch {}
-    }
+    const { clientId } = readGoogleCredentials();
     if (!clientId) throw new Error('No client_id found');
 
     // Build scopes from selected services
@@ -414,19 +416,8 @@ app.get('/auth/google/callback', async (req, res) => {
       email = decoded.email || '';
     } catch {}
 
-    // Read credentials from all sources
-    let clientId, clientSecret;
-    // Source 1: state file
-    try {
-      const s = JSON.parse(fs.readFileSync(GOG_STATE_PATH, 'utf8'));
-      clientId = s.clientId; clientSecret = s.clientSecret;
-    } catch {}
-    // Source 2: credentials.json (may have web/installed wrapper, or flat)
-    try {
-      const c = JSON.parse(fs.readFileSync(GOG_CREDENTIALS_PATH, 'utf8'));
-      clientId = clientId || c.web?.client_id || c.installed?.client_id || c.client_id;
-      clientSecret = clientSecret || c.web?.client_secret || c.installed?.client_secret || c.client_secret;
-    } catch {}
+    // Read credentials from credentials.json
+    const { clientId, clientSecret } = readGoogleCredentials();
     const redirectUri = `${getBaseUrl(req)}/auth/google/callback`;
 
     console.log(`[wrapper] Token exchange: clientId=${clientId?.slice(0, 20)}... redirectUri=${redirectUri} hasSecret=${!!clientSecret}`);
