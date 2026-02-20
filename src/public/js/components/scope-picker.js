@@ -8,9 +8,9 @@ export const SERVICES = [
   { key: 'calendar', icon: '📅', label: 'Calendar', defaultRead: true, defaultWrite: true },
   { key: 'drive', icon: '📁', label: 'Drive', defaultRead: true, defaultWrite: false },
   { key: 'sheets', icon: '📊', label: 'Sheets', defaultRead: true, defaultWrite: false },
-  { key: 'docs', icon: '📝', label: 'Docs', defaultRead: false, defaultWrite: false },
-  { key: 'tasks', icon: '✅', label: 'Tasks', defaultRead: true, defaultWrite: false },
-  { key: 'contacts', icon: '👤', label: 'Contacts', defaultRead: true, defaultWrite: false },
+  { key: 'docs', icon: '📝', label: 'Docs', defaultRead: true, defaultWrite: false },
+  { key: 'tasks', icon: '✅', label: 'Tasks', defaultRead: false, defaultWrite: false },
+  { key: 'contacts', icon: '👤', label: 'Contacts', defaultRead: false, defaultWrite: false },
   { key: 'meet', icon: '🎥', label: 'Meet', defaultRead: false, defaultWrite: false },
 ];
 
