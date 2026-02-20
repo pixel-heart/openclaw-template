@@ -79,14 +79,6 @@ if [ -n "$GOG_CLIENT_CREDENTIALS_JSON" ] && [ -n "$GOG_REFRESH_TOKEN" ]; then
   /usr/local/bin/gog auth tokens import "$TEMP_TOKEN" 2>/dev/null
   rm -f "$TEMP_TOKEN"
   echo "✓ gog CLI configured for ${GOG_ACCOUNT}"
-
-  if [ -n "$GOG_REFRESH_TOKEN_AGENT" ] && [ -n "$GOG_ACCOUNT_AGENT" ]; then
-    TEMP_TOKEN=$(mktemp)
-    echo "{\"email\": \"${GOG_ACCOUNT_AGENT}\", \"refresh_token\": \"$GOG_REFRESH_TOKEN_AGENT\"}" > "$TEMP_TOKEN"
-    /usr/local/bin/gog auth tokens import "$TEMP_TOKEN" 2>/dev/null
-    rm -f "$TEMP_TOKEN"
-    echo "✓ gog CLI configured for ${GOG_ACCOUNT_AGENT}"
-  fi
 else
   echo "⚠ Google credentials not set — skipping gog setup"
 fi
