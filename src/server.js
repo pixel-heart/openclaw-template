@@ -15,6 +15,26 @@ const OPENCLAW_DIR = '/data/.openclaw';
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 const ENV_FILE_PATH = '/data/.env';
 const WORKSPACE_DIR = `${OPENCLAW_DIR}/workspace`;
+const AUTH_PROFILES_PATH = `${OPENCLAW_DIR}/agents/main/agent/auth-profiles.json`;
+const CODEX_PROFILE_ID = 'openai-codex:codex-cli';
+const CODEX_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const CODEX_OAUTH_AUTHORIZE_URL = 'https://auth.openai.com/oauth/authorize';
+const CODEX_OAUTH_TOKEN_URL = 'https://auth.openai.com/oauth/token';
+const CODEX_OAUTH_REDIRECT_URI = 'http://localhost:1455/auth/callback';
+const CODEX_OAUTH_SCOPE = 'openid profile email offline_access';
+const CODEX_JWT_CLAIM_PATH = 'https://api.openai.com/auth';
+const kCodexOauthStateTtlMs = 10 * 60 * 1000;
+const kCodexOauthStates = new Map();
+const kOnboardingModelProviders = new Set(['anthropic', 'openai', 'openai-codex', 'google']);
+const kFallbackOnboardingModels = [
+  { key: 'anthropic/claude-opus-4-6', provider: 'anthropic', label: 'Claude Opus 4.6' },
+  { key: 'anthropic/claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6' },
+  { key: 'anthropic/claude-haiku-4-6', provider: 'anthropic', label: 'Claude Haiku 4.6' },
+  { key: 'openai-codex/gpt-5.3-codex', provider: 'openai-codex', label: 'Codex GPT-5.3' },
+  { key: 'openai/gpt-5.1-codex', provider: 'openai', label: 'OpenAI GPT-5.1 Codex' },
+  { key: 'google/gemini-3-pro-preview', provider: 'google', label: 'Gemini 3 Pro Preview' },
+  { key: 'google/gemini-3-flash-preview', provider: 'google', label: 'Gemini 3 Flash Preview' },
+];
 
 // ============================================================
 // Env var management
@@ -25,18 +45,195 @@ const kSystemVars = new Set([
 ]);
 
 const kKnownVars = [
-  { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', group: 'ai', hint: 'From console.anthropic.com' },
-  { key: 'ANTHROPIC_TOKEN', label: 'Anthropic Setup Token', group: 'ai', hint: 'From claude setup-token' },
-  { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', group: 'ai', hint: 'From platform.openai.com' },
-  { key: 'GEMINI_API_KEY', label: 'Gemini API Key', group: 'ai', hint: 'From aistudio.google.com' },
-  { key: 'GITHUB_TOKEN', label: 'GitHub PAT', group: 'github', hint: 'With repo scope' },
-  { key: 'GITHUB_WORKSPACE_REPO', label: 'Workspace Repo', group: 'github', hint: 'owner/repo or full URL' },
+  { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', group: 'models', hint: 'From console.anthropic.com' },
+  { key: 'ANTHROPIC_TOKEN', label: 'Anthropic Setup Token', group: 'models', hint: 'From claude setup-token' },
+  { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', group: 'models', hint: 'From platform.openai.com' },
+  { key: 'GEMINI_API_KEY', label: 'Gemini API Key', group: 'models', hint: 'From aistudio.google.com' },
+  { key: 'GITHUB_TOKEN', label: 'GitHub Access Token', group: 'github', hint: 'Create one with repo scope at github.com/settings/tokens' },
+  { key: 'GITHUB_WORKSPACE_REPO', label: 'Workspace Repo', group: 'github', hint: 'username/repo or https://github.com/username/repo' },
   { key: 'TELEGRAM_BOT_TOKEN', label: 'Telegram Bot Token', group: 'channels', hint: 'From @BotFather' },
   { key: 'DISCORD_BOT_TOKEN', label: 'Discord Bot Token', group: 'channels', hint: 'From Discord Developer Portal' },
   { key: 'BRAVE_API_KEY', label: 'Brave Search API Key', group: 'tools', hint: 'From brave.com/search/api' },
 ];
 
 const kKnownKeys = new Set(kKnownVars.map(v => v.key));
+
+const parseJsonFromNoisyOutput = (raw) => {
+  const text = String(raw || '');
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    return null;
+  }
+  try {
+    return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+  } catch {
+    return null;
+  }
+};
+
+const parseJwtPayload = (token) => {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3) return null;
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+};
+
+const getCodexAccountId = (accessToken) => {
+  const payload = parseJwtPayload(accessToken);
+  const auth = payload?.[CODEX_JWT_CLAIM_PATH];
+  const accountId = auth?.chatgpt_account_id;
+  return typeof accountId === 'string' && accountId ? accountId : null;
+};
+
+const ensureAuthProfilesStore = () => {
+  let store = { version: 1, profiles: {} };
+  try {
+    if (fs.existsSync(AUTH_PROFILES_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(AUTH_PROFILES_PATH, 'utf8'));
+      if (parsed && typeof parsed === 'object' && parsed.profiles && typeof parsed.profiles === 'object') {
+        store = {
+          version: Number(parsed.version || 1),
+          profiles: parsed.profiles,
+          order: parsed.order,
+          lastGood: parsed.lastGood,
+          usageStats: parsed.usageStats,
+        };
+      }
+    }
+  } catch {}
+  return store;
+};
+
+const saveAuthProfilesStore = (store) => {
+  fs.mkdirSync(path.dirname(AUTH_PROFILES_PATH), { recursive: true });
+  fs.writeFileSync(AUTH_PROFILES_PATH, JSON.stringify({
+    version: Number(store.version || 1),
+    profiles: store.profiles || {},
+    order: store.order,
+    lastGood: store.lastGood,
+    usageStats: store.usageStats,
+  }, null, 2));
+};
+
+const listCodexProfiles = () => {
+  const store = ensureAuthProfilesStore();
+  return Object.entries(store.profiles || {})
+    .filter(([, cred]) => cred?.provider === 'openai-codex')
+    .map(([id, cred]) => ({ id, cred }));
+};
+
+const getCodexProfile = () => {
+  const profiles = listCodexProfiles();
+  if (profiles.length === 0) return null;
+  const preferred = profiles.find((p) => p.id === CODEX_PROFILE_ID) || profiles[0];
+  return { profileId: preferred.id, ...preferred.cred };
+};
+
+const hasCodexOauthProfile = () => {
+  const profile = getCodexProfile();
+  return !!(profile?.access && profile?.refresh);
+};
+
+const upsertCodexProfile = ({ access, refresh, expires, accountId }) => {
+  const store = ensureAuthProfilesStore();
+  store.profiles[CODEX_PROFILE_ID] = {
+    type: 'oauth',
+    provider: 'openai-codex',
+    access,
+    refresh,
+    expires,
+    ...(accountId ? { accountId } : {}),
+  };
+  saveAuthProfilesStore(store);
+};
+
+const removeCodexProfiles = () => {
+  const store = ensureAuthProfilesStore();
+  let changed = false;
+  for (const [id, cred] of Object.entries(store.profiles || {})) {
+    if (cred?.provider === 'openai-codex') {
+      delete store.profiles[id];
+      changed = true;
+    }
+  }
+  if (changed) saveAuthProfilesStore(store);
+  return changed;
+};
+
+const cleanupCodexOauthStates = () => {
+  const now = Date.now();
+  for (const [state, value] of kCodexOauthStates.entries()) {
+    if (!value || now - value.createdAt > kCodexOauthStateTtlMs) {
+      kCodexOauthStates.delete(state);
+    }
+  }
+};
+
+const resolveGithubRepoUrl = (repoInput) => {
+  const cleaned = String(repoInput || '')
+    .trim()
+    .replace(/^git@github\.com:/, '')
+    .replace(/^https:\/\/github\.com\//, '')
+    .replace(/\.git$/, '');
+  if (!cleaned) return '';
+  if (!cleaned.includes('/')) {
+    throw new Error('GITHUB_WORKSPACE_REPO must be in "owner/repo" format.');
+  }
+  return cleaned;
+};
+
+const createPkcePair = () => {
+  const verifier = crypto.randomBytes(48).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return { verifier, challenge };
+};
+
+const resolveModelProvider = (modelKey) => String(modelKey || '').split('/')[0] || '';
+
+const parseCodexAuthorizationInput = (input) => {
+  const value = String(input || '').trim();
+  if (!value) return {};
+  try {
+    const url = new URL(value);
+    return {
+      code: url.searchParams.get('code') || '',
+      state: url.searchParams.get('state') || '',
+    };
+  } catch {}
+  if (value.includes('#')) {
+    const [code, state] = value.split('#', 2);
+    return { code: code || '', state: state || '' };
+  }
+  if (value.includes('code=')) {
+    const params = new URLSearchParams(value);
+    return {
+      code: params.get('code') || '',
+      state: params.get('state') || '',
+    };
+  }
+  return { code: value, state: '' };
+};
+
+const normalizeOnboardingModels = (models) => {
+  const deduped = new Map();
+  for (const model of models || []) {
+    if (!model?.key || typeof model.key !== 'string') continue;
+    const provider = resolveModelProvider(model.key);
+    if (!kOnboardingModelProviders.has(provider)) continue;
+    if (!deduped.has(model.key)) {
+      deduped.set(model.key, {
+        key: model.key,
+        provider,
+        label: model.name || model.key,
+      });
+    }
+  }
+  return Array.from(deduped.values()).sort((a, b) => a.key.localeCompare(b.key));
+};
 
 const readEnvFile = () => {
   try {
@@ -56,14 +253,14 @@ const readEnvFile = () => {
 };
 
 const writeEnvFile = (vars) => {
-  const groups = { ai: [], github: [], channels: [], tools: [], custom: [] };
+  const groups = { models: [], github: [], channels: [], tools: [], custom: [] };
   for (const { key, value } of vars) {
     const known = kKnownVars.find(v => v.key === key);
     const group = known ? known.group : 'custom';
     groups[group].push({ key, value });
   }
   const lines = ['# OpenClaw Environment Variables', '# Edit via the Setup UI or directly in this file', ''];
-  const labels = { ai: 'AI Provider', github: 'GitHub', channels: 'Channels', tools: 'Tools', custom: 'Custom' };
+  const labels = { models: 'AI Provider', github: 'GitHub', channels: 'Channels', tools: 'Tools', custom: 'Custom' };
   for (const [group, entries] of Object.entries(groups)) {
     if (entries.length === 0) continue;
     lines.push(`# --- ${labels[group]} ---`);
@@ -234,6 +431,7 @@ app.post('/api/auth/login', (req, res) => {
 const requireAuth = (req, res, next) => {
   if (!SETUP_PASSWORD) return next();
   if (req.path.startsWith('/auth/google/callback')) return next();
+  if (req.path.startsWith('/auth/codex/callback')) return next();
   const cookies = cookieParser(req);
   const token = cookies.setup_token || req.query.token;
   if (token && kAuthTokens.has(token)) return next();
@@ -260,38 +458,121 @@ app.get('/api/onboard/status', (req, res) => {
   res.json({ onboarded: isOnboarded() });
 });
 
+app.get('/api/models', async (req, res) => {
+  try {
+    const output = await shellCmd('openclaw models list --all --json', {
+      env: gatewayEnv(),
+      timeout: 20000,
+    });
+    const parsed = parseJsonFromNoisyOutput(output);
+    const models = normalizeOnboardingModels(parsed?.models || []);
+    if (models.length > 0) {
+      return res.json({ ok: true, source: 'openclaw', models });
+    }
+    return res.json({ ok: true, source: 'fallback', models: kFallbackOnboardingModels });
+  } catch (err) {
+    console.error('[models] Failed to load dynamic models:', err.message);
+    return res.json({ ok: true, source: 'fallback', models: kFallbackOnboardingModels });
+  }
+});
+
+app.get('/api/codex/status', (req, res) => {
+  const profile = getCodexProfile();
+  if (!profile) {
+    return res.json({ connected: false });
+  }
+  res.json({
+    connected: true,
+    profileId: profile.profileId,
+    accountId: profile.accountId || null,
+    expires: typeof profile.expires === 'number' ? profile.expires : null,
+  });
+});
+
+app.get('/api/models/status', async (req, res) => {
+  try {
+    const output = await shellCmd('openclaw models status --json', {
+      env: gatewayEnv(),
+      timeout: 20000,
+    });
+    const parsed = parseJsonFromNoisyOutput(output) || {};
+    res.json({
+      ok: true,
+      modelKey: parsed.resolvedDefault || parsed.defaultModel || null,
+      fallbacks: parsed.fallbacks || [],
+      imageModel: parsed.imageModel || null,
+    });
+  } catch (err) {
+    res.json({ ok: false, error: err.message || 'Failed to read model status' });
+  }
+});
+
+app.post('/api/models/set', async (req, res) => {
+  const { modelKey } = req.body || {};
+  if (!modelKey || typeof modelKey !== 'string' || !modelKey.includes('/')) {
+    return res.status(400).json({ ok: false, error: 'Missing modelKey' });
+  }
+  try {
+    await shellCmd(`openclaw models set "${modelKey}"`, {
+      env: gatewayEnv(),
+      timeout: 30000,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'Failed to set model' });
+  }
+});
+
 // API: run onboarding (ports setup.sh first-boot logic to Node)
 app.post('/api/onboard', async (req, res) => {
   if (isOnboarded()) return res.json({ ok: false, error: 'Already onboarded' });
 
-  const { vars } = req.body;
+  const { vars, modelKey } = req.body;
   if (!Array.isArray(vars)) return res.status(400).json({ ok: false, error: 'Missing vars array' });
+  if (!modelKey || typeof modelKey !== 'string' || !modelKey.includes('/')) {
+    return res.status(400).json({ ok: false, error: 'A model selection is required' });
+  }
 
   const varMap = Object.fromEntries(vars.map(v => [v.key, v.value]));
+  const githubToken = String(varMap.GITHUB_TOKEN || '');
+  const githubRepoInput = String(varMap.GITHUB_WORKSPACE_REPO || '').trim();
+  const selectedProvider = resolveModelProvider(modelKey);
+  const hasCodexOauth = hasCodexOauthProfile();
 
   // Validate minimum requirements
-  const hasAi = !!(varMap.ANTHROPIC_API_KEY || varMap.ANTHROPIC_TOKEN || varMap.OPENAI_API_KEY || varMap.GEMINI_API_KEY);
-  const hasGithub = !!(varMap.GITHUB_TOKEN && varMap.GITHUB_WORKSPACE_REPO);
+  const hasAiByProvider = {
+    anthropic: !!(varMap.ANTHROPIC_API_KEY || varMap.ANTHROPIC_TOKEN),
+    openai: !!varMap.OPENAI_API_KEY,
+    'openai-codex': !!(hasCodexOauth || varMap.OPENAI_API_KEY),
+    google: !!varMap.GEMINI_API_KEY,
+  };
+  const hasAnyAi = !!(varMap.ANTHROPIC_API_KEY || varMap.ANTHROPIC_TOKEN || varMap.OPENAI_API_KEY || varMap.GEMINI_API_KEY || hasCodexOauth);
+  const hasAi = selectedProvider in hasAiByProvider ? hasAiByProvider[selectedProvider] : hasAnyAi;
+  const hasGithub = !!(githubToken && githubRepoInput);
   const hasChannel = !!(varMap.TELEGRAM_BOT_TOKEN || varMap.DISCORD_BOT_TOKEN);
-  if (!hasAi) return res.status(400).json({ ok: false, error: 'At least one AI provider key is required' });
+  if (!hasAi) {
+    if (selectedProvider === 'openai-codex') {
+      return res.status(400).json({ ok: false, error: 'Connect OpenAI Codex OAuth or provide OPENAI_API_KEY before continuing' });
+    }
+    return res.status(400).json({ ok: false, error: `Missing credentials for selected provider "${selectedProvider}"` });
+  }
   if (!hasGithub) return res.status(400).json({ ok: false, error: 'GitHub token and workspace repo are required' });
   if (!hasChannel) return res.status(400).json({ ok: false, error: 'At least one channel token is required' });
 
   try {
     // 1. Save vars to /data/.env and reload into process.env
-    writeEnvFile(vars.filter(v => v.value));
+    const repoUrl = resolveGithubRepoUrl(githubRepoInput);
+    const varsToSave = [...vars.filter(v => v.value && v.key !== 'GITHUB_WORKSPACE_REPO')];
+    varsToSave.push({ key: 'GITHUB_WORKSPACE_REPO', value: repoUrl });
+    writeEnvFile(varsToSave);
     reloadEnv();
 
     // 2. Git init
-    const repoUrl = (varMap.GITHUB_WORKSPACE_REPO || '')
-      .replace(/^git@github\.com:/, '')
-      .replace(/^https:\/\/github\.com\//, '')
-      .replace(/\.git$/, '');
-    const remoteUrl = `https://${varMap.GITHUB_TOKEN}@github.com/${repoUrl}.git`;
+    const remoteUrl = `https://${githubToken}@github.com/${repoUrl}.git`;
 
     // Create repo if it doesn't exist, or verify it's empty
     const [repoOwner, repoName] = repoUrl.split('/');
-    const ghHeaders = { Authorization: `token ${varMap.GITHUB_TOKEN}`, 'User-Agent': 'openclaw-railway', Accept: 'application/vnd.github+json' };
+    const ghHeaders = { Authorization: `token ${githubToken}`, 'User-Agent': 'openclaw-railway', Accept: 'application/vnd.github+json' };
     try {
       const checkRes = await fetch(`https://api.github.com/repos/${repoUrl}`, { headers: ghHeaders });
       if (checkRes.status === 404) {
@@ -351,7 +632,20 @@ app.post('/api/onboard', async (req, res) => {
       '--workspace', WORKSPACE_DIR,
     ];
 
-    if (varMap.ANTHROPIC_TOKEN || process.env.ANTHROPIC_TOKEN) {
+    if (selectedProvider === 'openai-codex' && (varMap.OPENAI_API_KEY || process.env.OPENAI_API_KEY)) {
+      onboardArgs.push('--auth-choice', 'apiKey', '--openai-api-key', varMap.OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+    } else if (selectedProvider === 'openai-codex' && hasCodexOauth) {
+      // OpenAI Codex OAuth is interactive-only in onboard; use skip in non-interactive mode.
+      onboardArgs.push('--auth-choice', 'skip');
+    } else if ((selectedProvider === 'anthropic' || !selectedProvider) && (varMap.ANTHROPIC_TOKEN || process.env.ANTHROPIC_TOKEN)) {
+      onboardArgs.push('--auth-choice', 'token', '--token-provider', 'anthropic', '--token', varMap.ANTHROPIC_TOKEN || process.env.ANTHROPIC_TOKEN);
+    } else if ((selectedProvider === 'anthropic' || !selectedProvider) && (varMap.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY)) {
+      onboardArgs.push('--auth-choice', 'apiKey', '--anthropic-api-key', varMap.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY);
+    } else if ((selectedProvider === 'openai' || !selectedProvider) && (varMap.OPENAI_API_KEY || process.env.OPENAI_API_KEY)) {
+      onboardArgs.push('--auth-choice', 'apiKey', '--openai-api-key', varMap.OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+    } else if ((selectedProvider === 'google' || !selectedProvider) && (varMap.GEMINI_API_KEY || process.env.GEMINI_API_KEY)) {
+      onboardArgs.push('--auth-choice', 'apiKey', '--gemini-api-key', varMap.GEMINI_API_KEY || process.env.GEMINI_API_KEY);
+    } else if (varMap.ANTHROPIC_TOKEN || process.env.ANTHROPIC_TOKEN) {
       onboardArgs.push('--auth-choice', 'token', '--token-provider', 'anthropic', '--token', varMap.ANTHROPIC_TOKEN || process.env.ANTHROPIC_TOKEN);
     } else if (varMap.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY) {
       onboardArgs.push('--auth-choice', 'apiKey', '--anthropic-api-key', varMap.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY);
@@ -359,6 +653,8 @@ app.post('/api/onboard', async (req, res) => {
       onboardArgs.push('--auth-choice', 'apiKey', '--openai-api-key', varMap.OPENAI_API_KEY || process.env.OPENAI_API_KEY);
     } else if (varMap.GEMINI_API_KEY || process.env.GEMINI_API_KEY) {
       onboardArgs.push('--auth-choice', 'apiKey', '--gemini-api-key', varMap.GEMINI_API_KEY || process.env.GEMINI_API_KEY);
+    } else if (hasCodexOauth) {
+      onboardArgs.push('--auth-choice', 'skip');
     }
 
     console.log(`[onboard] Running: openclaw onboard ${onboardArgs.join(' ').replace(/sk-[^\s]+/g, '***')}`);
@@ -367,6 +663,14 @@ app.post('/api/onboard', async (req, res) => {
       timeout: 120000,
     });
     console.log('[onboard] Onboard complete');
+
+    await shellCmd(`openclaw models set "${modelKey}"`, {
+      env: gatewayEnv(),
+      timeout: 30000,
+    }).catch((e) => {
+      console.error('[onboard] Failed to set model:', e.message);
+      throw new Error(`Onboarding completed but failed to set model "${modelKey}"`);
+    });
 
     // Remove nested .git that onboard creates in workspace
     try { fs.rmSync(`${WORKSPACE_DIR}/.git`, { recursive: true, force: true }); } catch {}
@@ -620,6 +924,150 @@ app.post('/api/pairings/:id/reject', async (req, res) => {
   const channel = req.body.channel || 'telegram';
   const result = await clawCmd(`pairing reject ${channel} ${req.params.id}`);
   res.json(result);
+});
+
+// ============================================================
+// OpenAI Codex OAuth flow
+// ============================================================
+
+app.get('/auth/codex/start', (req, res) => {
+  try {
+    cleanupCodexOauthStates();
+    const redirectUri = CODEX_OAUTH_REDIRECT_URI;
+    const { verifier, challenge } = createPkcePair();
+    const state = crypto.randomBytes(16).toString('hex');
+    kCodexOauthStates.set(state, {
+      verifier,
+      redirectUri,
+      createdAt: Date.now(),
+    });
+
+    const authUrl = new URL(CODEX_OAUTH_AUTHORIZE_URL);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', CODEX_OAUTH_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('scope', CODEX_OAUTH_SCOPE);
+    authUrl.searchParams.set('code_challenge', challenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('id_token_add_organizations', 'true');
+    authUrl.searchParams.set('codex_cli_simplified_flow', 'true');
+    // Keep this aligned with OpenClaw's own Codex OAuth flow.
+    authUrl.searchParams.set('originator', 'pi');
+    res.redirect(authUrl.toString());
+  } catch (err) {
+    console.error('[codex] Failed to start OAuth flow:', err);
+    res.redirect('/setup?codex=error&message=' + encodeURIComponent(err.message));
+  }
+});
+
+app.get('/auth/codex/callback', async (req, res) => {
+  const { code, error, state } = req.query;
+  if (error) {
+    return res.send(`<!DOCTYPE html><html><body><script>
+      window.opener?.postMessage({ codex: 'error', message: '${String(error).replace(/'/g, "\\'")}' }, '*');
+      window.close();
+    </script><p>Codex auth failed. You can close this window.</p></body></html>`);
+  }
+  if (!code || !state) {
+    return res.send(`<!DOCTYPE html><html><body><script>
+      window.opener?.postMessage({ codex: 'error', message: 'Missing OAuth state/code' }, '*');
+      window.close();
+    </script><p>Missing OAuth state/code. You can close this window.</p></body></html>`);
+  }
+
+  cleanupCodexOauthStates();
+  const oauthState = kCodexOauthStates.get(String(state));
+  kCodexOauthStates.delete(String(state));
+  if (!oauthState) {
+    return res.send(`<!DOCTYPE html><html><body><script>
+      window.opener?.postMessage({ codex: 'error', message: 'State mismatch or expired login attempt' }, '*');
+      window.close();
+    </script><p>State mismatch. You can close this window.</p></body></html>`);
+  }
+
+  try {
+    const tokenRes = await fetch(CODEX_OAUTH_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: CODEX_OAUTH_CLIENT_ID,
+        code: String(code),
+        code_verifier: oauthState.verifier,
+        redirect_uri: oauthState.redirectUri,
+      }),
+    });
+    const json = await tokenRes.json().catch(() => ({}));
+    if (!tokenRes.ok || !json.access_token || !json.refresh_token || typeof json.expires_in !== 'number') {
+      throw new Error(`Token exchange failed (${tokenRes.status})`);
+    }
+
+    const access = String(json.access_token);
+    const refresh = String(json.refresh_token);
+    const expires = Date.now() + (Number(json.expires_in) * 1000);
+    const accountId = getCodexAccountId(access);
+
+    upsertCodexProfile({ access, refresh, expires, accountId });
+
+    return res.send(`<!DOCTYPE html><html><body><script>
+      window.opener?.postMessage({ codex: 'success' }, '*');
+      window.close();
+    </script><p>Codex connected. You can close this window.</p></body></html>`);
+  } catch (err) {
+    console.error('[codex] OAuth callback error:', err);
+    return res.send(`<!DOCTYPE html><html><body><script>
+      window.opener?.postMessage({ codex: 'error', message: '${String(err.message || 'OAuth error').replace(/'/g, "\\'")}' }, '*');
+      window.close();
+    </script><p>Error: ${String(err.message || 'OAuth error')}. You can close this window.</p></body></html>`);
+  }
+});
+
+app.post('/api/codex/exchange', async (req, res) => {
+  try {
+    cleanupCodexOauthStates();
+    const { input } = req.body || {};
+    const parsed = parseCodexAuthorizationInput(input);
+    const code = String(parsed.code || '');
+    const state = String(parsed.state || '');
+    if (!code || !state) {
+      return res.status(400).json({ ok: false, error: 'Missing code/state. Paste the full redirect URL from your browser address bar.' });
+    }
+    const oauthState = kCodexOauthStates.get(state);
+    if (!oauthState) {
+      return res.status(400).json({ ok: false, error: 'OAuth state expired or invalid. Start Codex OAuth again.' });
+    }
+    kCodexOauthStates.delete(state);
+    const tokenRes = await fetch(CODEX_OAUTH_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: CODEX_OAUTH_CLIENT_ID,
+        code,
+        code_verifier: oauthState.verifier,
+        redirect_uri: oauthState.redirectUri,
+      }),
+    });
+    const json = await tokenRes.json().catch(() => ({}));
+    if (!tokenRes.ok || !json.access_token || !json.refresh_token || typeof json.expires_in !== 'number') {
+      return res.status(400).json({ ok: false, error: `Token exchange failed (${tokenRes.status})` });
+    }
+    const access = String(json.access_token);
+    const refresh = String(json.refresh_token);
+    const expires = Date.now() + (Number(json.expires_in) * 1000);
+    const accountId = getCodexAccountId(access);
+    upsertCodexProfile({ access, refresh, expires, accountId });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[codex] Manual exchange error:', err);
+    return res.status(500).json({ ok: false, error: err.message || 'Codex OAuth exchange failed' });
+  }
+});
+
+app.post('/api/codex/disconnect', (req, res) => {
+  const changed = removeCodexProfiles();
+  res.json({ ok: true, changed });
 });
 
 // ============================================================
@@ -1142,7 +1590,7 @@ app.all('/webhook/*', (req, res) => {
 });
 
 // Proxy non-setup API routes to gateway
-const SETUP_API_PREFIXES = ['/api/status', '/api/pairings', '/api/google', '/api/gateway', '/api/onboard', '/api/env', '/api/auth'];
+const SETUP_API_PREFIXES = ['/api/status', '/api/pairings', '/api/google', '/api/codex', '/api/models', '/api/gateway', '/api/onboard', '/api/env', '/api/auth'];
 app.all('/api/*', (req, res) => {
   if (SETUP_API_PREFIXES.some(p => req.path.startsWith(p))) return;
   proxy.web(req, res);

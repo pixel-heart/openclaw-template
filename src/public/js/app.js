@@ -13,6 +13,7 @@ import { Gateway } from "./components/gateway.js";
 import { Channels, ALL_CHANNELS } from "./components/channels.js";
 import { Pairings } from "./components/pairings.js";
 import { Google } from "./components/google.js";
+import { Models } from "./components/models.js";
 import { Welcome } from "./components/welcome.js";
 import { Envars } from "./components/envars.js";
 import { ToastContainer } from "./components/toast.js";
@@ -31,10 +32,6 @@ const GeneralTab = ({ onSwitchTab }) => {
     const info = channels?.[ch];
     return info && info.status !== "paired";
   });
-
-  const hasPaired = ALL_CHANNELS.some(
-    (ch) => channels?.[ch]?.status === "paired",
-  );
 
   const pairingsPoll = usePolling(
     async () => {
@@ -87,7 +84,7 @@ const GeneralTab = ({ onSwitchTab }) => {
         onApprove=${handleApprove}
         onReject=${handleReject}
       />
-      ${hasPaired && html`<${Google} key=${googleKey} />`}
+      <${Google} key=${googleKey} />
 
       ${repo && html`
         <div class="bg-surface border border-border rounded-xl p-4">
@@ -191,7 +188,7 @@ function App() {
         </div>
 
         <div class="flex gap-1 border-b border-border">
-          ${["general", "envars"].map(
+          ${["general", "models", "envars"].map(
             (t) => html`
               <button
                 onclick=${() => setTab(t)}
@@ -200,7 +197,7 @@ function App() {
                   ? "border-white text-white"
                   : "border-transparent text-gray-500 hover:text-gray-300"}"
               >
-                ${t === "general" ? "General" : "Envars"}
+                ${t === "general" ? "General" : t === "models" ? "Models" : "Envars"}
               </button>
             `,
           )}
@@ -210,6 +207,8 @@ function App() {
       <div class="space-y-4 pt-4">
         ${tab === "general"
           ? html`<${GeneralTab} onSwitchTab=${setTab} />`
+          : tab === "models"
+          ? html`<${Models} />`
           : html`<${Envars} />`}
       </div>
     </div>

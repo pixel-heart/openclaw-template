@@ -42,13 +42,18 @@ After deploying, visit your Railway app URL (e.g. `https://your-app.up.railway.a
 
 ### 2. Complete the welcome screen
 
-The welcome screen walks you through entering the minimum required variables:
+The welcome screen walks you through selecting your default model and entering the minimum required variables:
 
-- **AI Provider** (at least one): Anthropic API Key, Anthropic Setup Token, OpenAI API Key, or Gemini API Key
-- **GitHub**: Personal access token + an empty private repo for backing up your agent's state
+- **Model** (required): Pulled dynamically from your installed OpenClaw model catalog
+- **AI Provider auth** (required for selected model): Anthropic API Key/Setup Token, OpenAI API Key, Gemini API Key, or OpenAI Codex OAuth
+- **GitHub**: Personal access token + a repo (`owner/repo`) for backing up your agent's state
 - **Channel** (at least one): Telegram Bot Token or Discord Bot Token
 
 Each field includes instructions and links for how to get the value. Optional fields (like Brave Search API Key) can be filled in later from the Envars tab.
+
+> **Model catalog note:** Models are discovered at runtime via `openclaw models list --all --json`. This keeps the setup UI aligned with the OpenClaw version installed in your deployment.
+>
+> **Codex OAuth note:** OpenClaw onboarding runs in non-interactive mode here. For OAuth-only Codex setups, the wrapper uses `--auth-choice skip` and then applies your selected `openai-codex/*` model after onboarding.
 
 Click **Complete Setup** — the server runs onboarding, configures channels, and pushes an initial commit to your GitHub repo. This takes 10–15 seconds.
 
@@ -83,6 +88,11 @@ The **Envars** tab lets you:
 - Delete custom variables with the ✕ button
 - Save changes to the persistent `/data/.env` file
 
+The **Models** tab lets you:
+
+- Set your primary model after onboarding
+- Manage AI provider keys and Codex OAuth connection
+
 Adding or removing a channel token (e.g. `DISCORD_BOT_TOKEN`) automatically enables/disables that channel in the OpenClaw config using `openclaw channels add/remove`.
 
 The server watches `/data/.env` for changes — including ones written by the OpenClaw agent itself. When the agent needs an API key for a tool, it adds a placeholder to `/data/.env` and tells you to visit the Envars tab to fill it in.
@@ -94,9 +104,10 @@ The server watches `/data/.env` for changes — including ones written by the Op
 | `ANTHROPIC_API_KEY`     | AI Provider | From [console.anthropic.com](https://console.anthropic.com/) (recommended)                                                     |
 | `ANTHROPIC_TOKEN`       | AI Provider | From `claude setup-token`                                                                                                      |
 | `OPENAI_API_KEY`        | AI Provider | From [platform.openai.com](https://platform.openai.com/)                                                                       |
+| `(no env var) Codex OAuth` | AI Provider | Connected via setup UI OAuth flow (ChatGPT subscription/Codex); stored in OpenClaw auth profiles                               |
 | `GEMINI_API_KEY`        | AI Provider | From [aistudio.google.com](https://aistudio.google.com/)                                                                       |
-| `GITHUB_TOKEN`          | GitHub      | PAT with `repo` scope                                                                                                          |
-| `GITHUB_WORKSPACE_REPO` | GitHub      | Your repo (any format)                                                                                                         |
+| `GITHUB_TOKEN`          | GitHub      | Personal access token with `repo` scope from [github.com/settings/tokens](https://github.com/settings/tokens)                 |
+| `GITHUB_WORKSPACE_REPO` | GitHub      | `owner/repo` (or `https://github.com/owner/repo`)                                                                              |
 | `TELEGRAM_BOT_TOKEN`    | Channels    | From [@BotFather](https://t.me/BotFather) · [full guide](https://docs.openclaw.ai/channels/telegram)                           |
 | `DISCORD_BOT_TOKEN`     | Channels    | From [Developer Portal](https://discord.com/developers/applications) · [full guide](https://docs.openclaw.ai/channels/discord) |
 | `BRAVE_API_KEY`         | Tools       | From [brave.com/search/api](https://brave.com/search/api/) — free tier available                                               |

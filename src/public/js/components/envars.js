@@ -6,14 +6,27 @@ import { showToast } from "./toast.js";
 const html = htm.bind(h);
 
 const kGroupLabels = {
-  ai: "AI Provider",
   github: "GitHub",
   channels: "Channels",
   tools: "Tools",
   custom: "Custom",
 };
 
-const kGroupOrder = ["ai", "github", "channels", "tools", "custom"];
+const kGroupOrder = ["github", "channels", "tools", "custom"];
+
+const kHintByKey = {
+  ANTHROPIC_API_KEY: html`From <a href="https://console.anthropic.com" target="_blank" class="text-blue-400 hover:underline">console.anthropic.com</a>`,
+  ANTHROPIC_TOKEN: html`From <code class="text-xs bg-black/30 px-1 rounded">claude setup-token</code>`,
+  OPENAI_API_KEY: html`From <a href="https://platform.openai.com" target="_blank" class="text-blue-400 hover:underline">platform.openai.com</a>`,
+  GEMINI_API_KEY: html`From <a href="https://aistudio.google.com" target="_blank" class="text-blue-400 hover:underline">aistudio.google.com</a>`,
+  GITHUB_TOKEN: html`Create at <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-400 hover:underline">github.com/settings/tokens</a> with <code class="text-xs bg-black/30 px-1 rounded">repo</code> scope`,
+  GITHUB_WORKSPACE_REPO: html`Use <code class="text-xs bg-black/30 px-1 rounded">owner/repo</code> or <code class="text-xs bg-black/30 px-1 rounded">https://github.com/owner/repo</code>`,
+  TELEGRAM_BOT_TOKEN: html`From <a href="https://t.me/BotFather" target="_blank" class="text-blue-400 hover:underline">@BotFather</a> · <a href="https://docs.openclaw.ai/channels/telegram" target="_blank" class="text-blue-400 hover:underline">full guide</a>`,
+  DISCORD_BOT_TOKEN: html`From <a href="https://discord.com/developers/applications" target="_blank" class="text-blue-400 hover:underline">Developer Portal</a> · <a href="https://docs.openclaw.ai/channels/discord" target="_blank" class="text-blue-400 hover:underline">full guide</a>`,
+  BRAVE_API_KEY: html`From <a href="https://brave.com/search/api/" target="_blank" class="text-blue-400 hover:underline">brave.com/search/api</a> — free tier available`,
+};
+
+const getHintContent = (envVar) => kHintByKey[envVar.key] || envVar.hint || "";
 
 const EnvRow = ({ envVar, onChange, onDelete, disabled }) => {
   const [visible, setVisible] = useState(false);
@@ -31,11 +44,6 @@ const EnvRow = ({ envVar, onChange, onDelete, disabled }) => {
           <label class="text-xs font-medium text-gray-400">
             ${envVar.label || envVar.key}
           </label>
-          ${envVar.hint
-            ? html`<span class="text-xs text-gray-600"
-                >· ${envVar.hint}</span
-              >`
-            : null}
         </div>
         <div class="flex items-center gap-1">
           <input
@@ -65,6 +73,9 @@ const EnvRow = ({ envVar, onChange, onDelete, disabled }) => {
               </button>`
             : null}
         </div>
+        ${getHintContent(envVar)
+          ? html`<p class="text-xs text-gray-600 mt-1">${getHintContent(envVar)}</p>`
+          : null}
       </div>
     </div>
   `;

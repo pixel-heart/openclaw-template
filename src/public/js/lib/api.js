@@ -69,14 +69,52 @@ export async function fetchOnboardStatus() {
   return res.json();
 }
 
-export async function runOnboard(vars) {
+export async function runOnboard(vars, modelKey) {
   const res = await authFetch('/api/onboard', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vars }),
+    body: JSON.stringify({ vars, modelKey }),
   });
   return res.json();
 }
+
+export const fetchModels = async () => {
+  const res = await authFetch('/api/models');
+  return res.json();
+};
+
+export const fetchModelStatus = async () => {
+  const res = await authFetch('/api/models/status');
+  return res.json();
+};
+
+export const setPrimaryModel = async (modelKey) => {
+  const res = await authFetch('/api/models/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modelKey }),
+  });
+  return res.json();
+};
+
+export const fetchCodexStatus = async () => {
+  const res = await authFetch('/api/codex/status');
+  return res.json();
+};
+
+export const disconnectCodex = async () => {
+  const res = await authFetch('/api/codex/disconnect', { method: 'POST' });
+  return res.json();
+};
+
+export const exchangeCodexOAuth = async (input) => {
+  const res = await authFetch('/api/codex/exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input }),
+  });
+  return res.json();
+};
 
 export async function fetchEnvVars() {
   const res = await authFetch('/api/env');
