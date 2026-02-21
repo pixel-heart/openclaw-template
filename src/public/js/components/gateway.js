@@ -118,7 +118,7 @@ export function Gateway({ status, openclawVersion }) {
             ${updateError && html`<p class="text-xs text-yellow-500 mt-1">${updateError}</p>`}
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            ${hasUpdate && latestVersion && html`<span class="text-xs text-yellow-500">${latestVersion} available</span>`}
+            ${hasUpdate && latestVersion && html`<a href="https://github.com/openclaw/openclaw/tags" target="_blank" class="text-xs text-yellow-500 hover:text-yellow-300 transition-colors">${latestVersion} available</a>`}
             <button
               onclick=${handleUpdate}
               disabled=${checkingUpdate}
