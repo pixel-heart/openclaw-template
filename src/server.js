@@ -1039,9 +1039,24 @@ app.post("/api/onboard", async (req, res) => {
     fs.writeFileSync(`${OPENCLAW_DIR}/openclaw.json`, content);
     console.log("[onboard] Config sanitized");
 
-    // 5. Append to TOOLS.md and HEARTBEAT.md
+    // 5. Append to AGENTS.md, TOOLS.md, and HEARTBEAT.md
+    const agentsMd = `${WORKSPACE_DIR}/AGENTS.md`;
     const toolsMd = `${WORKSPACE_DIR}/TOOLS.md`;
     const heartbeatMd = `${WORKSPACE_DIR}/HEARTBEAT.md`;
+
+    try {
+      const agentsContent = fs.existsSync(agentsMd)
+        ? fs.readFileSync(agentsMd, "utf8")
+        : "";
+      if (!agentsContent.includes("No YOLO System Changes")) {
+        fs.appendFileSync(
+          agentsMd,
+          fs.readFileSync("/app/setup/AGENTS.md.append", "utf8"),
+        );
+      }
+    } catch (e) {
+      console.error("[onboard] AGENTS.md append error:", e.message);
+    }
 
     try {
       const toolsContent = fs.existsSync(toolsMd)
