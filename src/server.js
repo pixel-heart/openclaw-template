@@ -1139,8 +1139,8 @@ app.post("/api/onboard", async (req, res) => {
     fs.writeFileSync(`${OPENCLAW_DIR}/openclaw.json`, content);
     console.log("[onboard] Config sanitized");
 
-    // 4b. Add dashboard allowed origin
-    ensureDashboardOrigin(getBaseUrl(req));
+    // 4b. Configure gateway proxy trust + dashboard origin
+    ensureGatewayProxyConfig(getBaseUrl(req));
 
     // 5. Append to AGENTS.md, TOOLS.md, and HEARTBEAT.md
     const agentsMd = `${WORKSPACE_DIR}/AGENTS.md`;
@@ -1432,9 +1432,6 @@ app.get("/api/gateway-status", async (req, res) => {
 app.get("/api/gateway/dashboard", async (req, res) => {
   if (!isOnboarded()) {
     return res.json({ ok: false, url: "/openclaw" });
-  }
-  if (ensureDashboardOrigin(getBaseUrl(req))) {
-    runGatewayCmd("restart");
   }
   const result = await clawCmd("dashboard --no-open");
   if (result.ok && result.stdout) {
@@ -2239,24 +2236,43 @@ function getBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
-const ensureDashboardOrigin = (origin) => {
-  if (!origin || !isOnboarded()) return false;
+const ensureGatewayProxyConfig = (origin) => {
+  if (!isOnboarded()) return false;
   try {
     const configPath = `${OPENCLAW_DIR}/openclaw.json`;
     const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
     if (!cfg.gateway) cfg.gateway = {};
-    if (!cfg.gateway.controlUi) cfg.gateway.controlUi = {};
-    if (!Array.isArray(cfg.gateway.controlUi.allowedOrigins)) {
-      cfg.gateway.controlUi.allowedOrigins = [];
+    let changed = false;
+
+    // Ensure trustedProxies includes loopback (our reverse proxy)
+    if (!Array.isArray(cfg.gateway.trustedProxies)) {
+      cfg.gateway.trustedProxies = [];
     }
-    const origins = cfg.gateway.controlUi.allowedOrigins;
-    if (origins.includes(origin)) return false;
-    origins.push(origin);
-    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
-    console.log(`[wrapper] Added dashboard origin: ${origin}`);
-    return true;
+    if (!cfg.gateway.trustedProxies.includes("127.0.0.1")) {
+      cfg.gateway.trustedProxies.push("127.0.0.1");
+      console.log("[wrapper] Added 127.0.0.1 to gateway.trustedProxies");
+      changed = true;
+    }
+
+    // Ensure controlUi.allowedOrigins includes the request origin
+    if (origin) {
+      if (!cfg.gateway.controlUi) cfg.gateway.controlUi = {};
+      if (!Array.isArray(cfg.gateway.controlUi.allowedOrigins)) {
+        cfg.gateway.controlUi.allowedOrigins = [];
+      }
+      if (!cfg.gateway.controlUi.allowedOrigins.includes(origin)) {
+        cfg.gateway.controlUi.allowedOrigins.push(origin);
+        console.log(`[wrapper] Added dashboard origin: ${origin}`);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
+    }
+    return changed;
   } catch (e) {
-    console.error(`[wrapper] ensureDashboardOrigin error: ${e.message}`);
+    console.error(`[wrapper] ensureGatewayProxyConfig error: ${e.message}`);
     return false;
   }
 };
@@ -2423,6 +2439,7 @@ server.listen(PORT, "0.0.0.0", () => {
   if (isOnboarded()) {
     reloadEnv();
     syncChannelConfig(readEnvFile());
+    ensureGatewayProxyConfig(null);
     startGateway();
   } else {
     console.log("[wrapper] Awaiting onboarding via Setup UI");
