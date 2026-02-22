@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y git curl procps python3 make g++ && rm 
 WORKDIR /app
 
 COPY package.json ./
-RUN npm install --no-package-lock
+RUN npm install --omit=dev && npm cache clean --force
 
 ENV PATH="/app/node_modules/.bin:$PATH"
 
