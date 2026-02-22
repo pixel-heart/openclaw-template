@@ -1,0 +1,229 @@
+const { spawn, execSync } = require("child_process");
+const fs = require("fs");
+const net = require("net");
+const { OPENCLAW_DIR, GATEWAY_HOST, GATEWAY_PORT, kChannelDefs } = require("./constants");
+
+const gatewayEnv = () => ({
+  ...process.env,
+  OPENCLAW_HOME: "/data",
+  OPENCLAW_CONFIG_PATH: `${OPENCLAW_DIR}/openclaw.json`,
+  XDG_CONFIG_HOME: OPENCLAW_DIR,
+});
+
+const isOnboarded = () => fs.existsSync(`${OPENCLAW_DIR}/openclaw.json`);
+
+const isGatewayRunning = () =>
+  new Promise((resolve) => {
+    const sock = net.createConnection(GATEWAY_PORT, GATEWAY_HOST);
+    sock.setTimeout(1000);
+    sock.on("connect", () => {
+      sock.destroy();
+      resolve(true);
+    });
+    sock.on("error", () => resolve(false));
+    sock.on("timeout", () => {
+      sock.destroy();
+      resolve(false);
+    });
+  });
+
+const runGatewayCmd = (cmd) => {
+  console.log(`[wrapper] Running: openclaw gateway ${cmd}`);
+  try {
+    const out = execSync(`openclaw gateway ${cmd}`, {
+      env: gatewayEnv(),
+      timeout: 15000,
+      encoding: "utf8",
+    });
+    if (out.trim()) console.log(`[wrapper] ${out.trim()}`);
+  } catch (e) {
+    if (e.stdout?.trim())
+      console.log(`[wrapper] gateway ${cmd} stdout: ${e.stdout.trim()}`);
+    if (e.stderr?.trim())
+      console.log(`[wrapper] gateway ${cmd} stderr: ${e.stderr.trim()}`);
+    if (!e.stdout?.trim() && !e.stderr?.trim())
+      console.log(`[wrapper] gateway ${cmd} error: ${e.message}`);
+    console.log(`[wrapper] gateway ${cmd} exit code: ${e.status}`);
+  }
+};
+
+const startGateway = async () => {
+  if (!isOnboarded()) {
+    console.log("[wrapper] Not onboarded yet — skipping gateway start");
+    return;
+  }
+  if (await isGatewayRunning()) {
+    console.log("[wrapper] Gateway already running — skipping start");
+    return;
+  }
+  console.log("[wrapper] Starting openclaw gateway...");
+  const child = spawn("openclaw", ["gateway", "run"], {
+    env: gatewayEnv(),
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.on("data", (d) => process.stdout.write(`[gateway] ${d}`));
+  child.stderr.on("data", (d) => process.stderr.write(`[gateway] ${d}`));
+  child.on("exit", (code) => {
+    console.log(`[wrapper] Gateway launcher exited with code ${code}`);
+  });
+};
+
+const restartGateway = (reloadEnv) => {
+  reloadEnv();
+  runGatewayCmd("install --force");
+  runGatewayCmd("restart");
+};
+
+const attachGatewaySignalHandlers = () => {
+  process.on("SIGTERM", () => {
+    runGatewayCmd("stop");
+    process.exit(0);
+  });
+  process.on("SIGINT", () => {
+    runGatewayCmd("stop");
+    process.exit(0);
+  });
+};
+
+const ensureGatewayProxyConfig = (origin) => {
+  if (!isOnboarded()) return false;
+  try {
+    const configPath = `${OPENCLAW_DIR}/openclaw.json`;
+    const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    if (!cfg.gateway) cfg.gateway = {};
+    let changed = false;
+
+    if (!Array.isArray(cfg.gateway.trustedProxies)) {
+      cfg.gateway.trustedProxies = [];
+    }
+    if (!cfg.gateway.trustedProxies.includes("127.0.0.1")) {
+      cfg.gateway.trustedProxies.push("127.0.0.1");
+      console.log("[wrapper] Added 127.0.0.1 to gateway.trustedProxies");
+      changed = true;
+    }
+
+    if (origin) {
+      if (!cfg.gateway.controlUi) cfg.gateway.controlUi = {};
+      if (!Array.isArray(cfg.gateway.controlUi.allowedOrigins)) {
+        cfg.gateway.controlUi.allowedOrigins = [];
+      }
+      if (!cfg.gateway.controlUi.allowedOrigins.includes(origin)) {
+        cfg.gateway.controlUi.allowedOrigins.push(origin);
+        console.log(`[wrapper] Added dashboard origin: ${origin}`);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
+    }
+    return changed;
+  } catch (e) {
+    console.error(`[wrapper] ensureGatewayProxyConfig error: ${e.message}`);
+    return false;
+  }
+};
+
+const syncChannelConfig = (savedVars, mode = "all") => {
+  try {
+    const configPath = `${OPENCLAW_DIR}/openclaw.json`;
+    const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const savedMap = Object.fromEntries(
+      savedVars.filter((v) => v.value).map((v) => [v.key, v.value]),
+    );
+    const env = gatewayEnv();
+
+    for (const [ch, def] of Object.entries(kChannelDefs)) {
+      const token = savedMap[def.envKey];
+      const isConfigured = cfg.channels?.[ch]?.enabled;
+
+      if (token && !isConfigured && (mode === "add" || mode === "all")) {
+        console.log(`[wrapper] Adding channel: ${ch}`);
+        try {
+          execSync(`openclaw channels add --channel ${ch} --token "${token}"`, {
+            env,
+            timeout: 15000,
+            encoding: "utf8",
+          });
+          const raw = fs.readFileSync(configPath, "utf8");
+          if (raw.includes(token)) {
+            fs.writeFileSync(
+              configPath,
+              raw.split(token).join("${" + def.envKey + "}"),
+            );
+          }
+          console.log(`[wrapper] Channel ${ch} added`);
+        } catch (e) {
+          console.error(
+            `[wrapper] channels add ${ch}: ${(e.stderr || e.message || "").toString().trim().slice(0, 200)}`,
+          );
+        }
+      } else if (
+        !token &&
+        isConfigured &&
+        (mode === "remove" || mode === "all")
+      ) {
+        console.log(`[wrapper] Removing channel: ${ch}`);
+        try {
+          execSync(`openclaw channels remove --channel ${ch} --delete`, {
+            env,
+            timeout: 15000,
+            encoding: "utf8",
+          });
+          console.log(`[wrapper] Channel ${ch} removed`);
+        } catch (e) {
+          console.error(
+            `[wrapper] channels remove ${ch}: ${(e.stderr || e.message || "").toString().trim().slice(0, 200)}`,
+          );
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[wrapper] syncChannelConfig error:", e.message);
+  }
+};
+
+const getChannelStatus = () => {
+  try {
+    const config = JSON.parse(fs.readFileSync(`${OPENCLAW_DIR}/openclaw.json`, "utf8"));
+    const credDir = `${OPENCLAW_DIR}/credentials`;
+    const channels = {};
+
+    for (const ch of ["telegram", "discord"]) {
+      if (!config.channels?.[ch]?.enabled) continue;
+      if (!process.env[kChannelDefs[ch].envKey]) continue;
+
+      let paired = 0;
+      try {
+        const files = fs
+          .readdirSync(credDir)
+          .filter((f) => f.startsWith(`${ch}-`) && f.endsWith("-allowFrom.json"));
+        for (const file of files) {
+          const data = JSON.parse(fs.readFileSync(`${credDir}/${file}`, "utf8"));
+          paired += (data.allowFrom || []).length;
+        }
+      } catch {}
+      const inlineAllowFrom = config.channels[ch]?.allowFrom;
+      if (Array.isArray(inlineAllowFrom)) paired += inlineAllowFrom.length;
+
+      channels[ch] = { status: paired > 0 ? "paired" : "configured", paired };
+    }
+
+    return channels;
+  } catch {
+    return {};
+  }
+};
+
+module.exports = {
+  gatewayEnv,
+  isOnboarded,
+  isGatewayRunning,
+  runGatewayCmd,
+  startGateway,
+  restartGateway,
+  attachGatewaySignalHandlers,
+  ensureGatewayProxyConfig,
+  syncChannelConfig,
+  getChannelStatus,
+};
