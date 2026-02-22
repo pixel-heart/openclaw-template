@@ -116,7 +116,16 @@ const writeSanitizedOpenclawConfig = ({ fs, openclawDir, varMap }) => {
   if (!cfg.plugins) cfg.plugins = {};
   if (!cfg.plugins.entries) cfg.plugins.entries = {};
   if (!cfg.commands) cfg.commands = {};
+  if (!cfg.hooks) cfg.hooks = {};
+  if (!cfg.hooks.internal) cfg.hooks.internal = {};
+  if (!cfg.hooks.internal.entries) cfg.hooks.internal.entries = {};
   cfg.commands.restart = true;
+  cfg.hooks.internal.enabled = true;
+  cfg.hooks.internal.entries["bootstrap-extra-files"] = {
+    ...(cfg.hooks.internal.entries["bootstrap-extra-files"] || {}),
+    enabled: true,
+    paths: ["hooks/bootstrap/AGENTS.md", "hooks/bootstrap/TOOLS.md"],
+  };
 
   if (varMap.TELEGRAM_BOT_TOKEN) {
     cfg.channels.telegram = {

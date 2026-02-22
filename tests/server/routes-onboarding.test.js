@@ -134,8 +134,6 @@ describe("server/routes/onboarding", () => {
     const deps = createBaseDeps();
     deps.fs.readFileSync.mockImplementation((path) => {
       if (path === "/tmp/openclaw/openclaw.json") return "{}";
-      if (path === "/app/setup/AGENTS.md.append") return "AGENTS_APPEND";
-      if (path === "/app/setup/TOOLS.md.append") return "TOOLS_APPEND";
       if (path === "/app/setup/skills/control-ui/SKILL.md") return "BASE={{BASE_URL}}";
       if (path === "/app/setup/hourly-git-sync.sh") return "echo Auto-commit hourly sync";
       return "{}";
@@ -150,6 +148,14 @@ describe("server/routes/onboarding", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
     expect(deps.startGateway).toHaveBeenCalledTimes(1);
+    expect(deps.fs.copyFileSync).toHaveBeenCalledWith(
+      "/app/setup/core-prompts/AGENTS.md",
+      "/tmp/openclaw/workspace/hooks/bootstrap/AGENTS.md",
+    );
+    expect(deps.fs.copyFileSync).toHaveBeenCalledWith(
+      "/app/setup/core-prompts/TOOLS.md",
+      "/tmp/openclaw/workspace/hooks/bootstrap/TOOLS.md",
+    );
 
     expect(deps.fs.writeFileSync).toHaveBeenCalledWith(
       "/tmp/openclaw/hourly-git-sync.sh",
@@ -167,14 +173,23 @@ describe("server/routes/onboarding", () => {
       cmd.includes('git commit -m "initial setup"'),
     );
     expect(initialPushCall[0]).toContain("git push -u origin main");
+
+    const openclawWriteCall = deps.fs.writeFileSync.mock.calls.find(
+      ([path]) => path === "/tmp/openclaw/openclaw.json",
+    );
+    expect(openclawWriteCall).toBeTruthy();
+    const writtenConfig = JSON.parse(openclawWriteCall[1]);
+    expect(writtenConfig.hooks.internal.enabled).toBe(true);
+    expect(writtenConfig.hooks.internal.entries["bootstrap-extra-files"]).toEqual({
+      enabled: true,
+      paths: ["hooks/bootstrap/AGENTS.md", "hooks/bootstrap/TOOLS.md"],
+    });
   });
 
   it("allows onboarding into an existing repo with normal initial push", async () => {
     const deps = createBaseDeps();
     deps.fs.readFileSync.mockImplementation((path) => {
       if (path === "/tmp/openclaw/openclaw.json") return "{}";
-      if (path === "/app/setup/AGENTS.md.append") return "AGENTS_APPEND";
-      if (path === "/app/setup/TOOLS.md.append") return "TOOLS_APPEND";
       if (path === "/app/setup/skills/control-ui/SKILL.md") return "BASE={{BASE_URL}}";
       if (path === "/app/setup/hourly-git-sync.sh") return "echo Auto-commit hourly sync";
       return "{}";
@@ -198,8 +213,6 @@ describe("server/routes/onboarding", () => {
     const deps = createBaseDeps();
     deps.fs.readFileSync.mockImplementation((path) => {
       if (path === "/tmp/openclaw/openclaw.json") return "{}";
-      if (path === "/app/setup/AGENTS.md.append") return "AGENTS_APPEND";
-      if (path === "/app/setup/TOOLS.md.append") return "TOOLS_APPEND";
       if (path === "/app/setup/skills/control-ui/SKILL.md") return "BASE={{BASE_URL}}";
       if (path === "/app/setup/hourly-git-sync.sh") return "echo Auto-commit hourly sync";
       return "{}";

@@ -1,10 +1,9 @@
-
-
-
 ### ⚠️ No YOLO System Changes!
-**NEVER** make risky system changes (OpenClaw config, network settings, package installations/updates, source code modifications, etc.) without the user's explicit approval FIRST. 
+
+**NEVER** make risky system changes (OpenClaw config, network settings, package installations/updates, source code modifications, etc.) without the user's explicit approval FIRST.
 
 Always explain:
+
 1. **What** you want to change
 2. **Why** you want to change it
 3. **What could go wrong**
@@ -12,6 +11,7 @@ Always explain:
 Then WAIT for the user's approval.
 
 ### Show Your Work
+
 When you say that you've done something, please let me know what changes you've made, which files you've updated and how I can find them. This is key for observability and verifying your work.
 
 After making changes, end your message with a **Resources changed** summary:
@@ -19,7 +19,7 @@ After making changes, end your message with a **Resources changed** summary:
 ```
 Resources changed:
 • path/or/resource (new|edit|delete) — brief description
-Commit: [commit url]
+Commit: [abc1234](commit url)
 ```
 
 Include all internal resources (files, config, cron jobs, skills) and external resources (third-party pages, databases, integrations) that were created, modified, or removed.

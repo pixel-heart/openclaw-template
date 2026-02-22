@@ -1,11 +1,12 @@
-const appendTemplateIfMissing = ({ fs, targetPath, templatePath, marker, logPrefix }) => {
+const syncBootstrapPromptFiles = ({ fs, workspaceDir }) => {
   try {
-    const current = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf8") : "";
-    if (!current.includes(marker)) {
-      fs.appendFileSync(targetPath, fs.readFileSync(templatePath, "utf8"));
-    }
+    const bootstrapDir = `${workspaceDir}/hooks/bootstrap`;
+    fs.mkdirSync(bootstrapDir, { recursive: true });
+    fs.copyFileSync("/app/setup/core-prompts/AGENTS.md", `${bootstrapDir}/AGENTS.md`);
+    fs.copyFileSync("/app/setup/core-prompts/TOOLS.md", `${bootstrapDir}/TOOLS.md`);
+    console.log("[onboard] Bootstrap prompt files synced");
   } catch (e) {
-    console.error(`[onboard] ${logPrefix} append error:`, e.message);
+    console.error("[onboard] Bootstrap prompt sync error:", e.message);
   }
 };
 
@@ -22,4 +23,4 @@ const installControlUiSkill = ({ fs, openclawDir, baseUrl }) => {
   }
 };
 
-module.exports = { appendTemplateIfMissing, installControlUiSkill };
+module.exports = { installControlUiSkill, syncBootstrapPromptFiles };

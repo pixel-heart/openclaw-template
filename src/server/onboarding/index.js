@@ -1,7 +1,7 @@
 const { validateOnboardingInput } = require("./validation");
 const { ensureGithubRepoAccessible } = require("./github");
 const { buildOnboardArgs, writeSanitizedOpenclawConfig } = require("./openclaw");
-const { appendTemplateIfMissing, installControlUiSkill } = require("./workspace");
+const { installControlUiSkill, syncBootstrapPromptFiles } = require("./workspace");
 const { installHourlyGitSyncScript, installHourlyGitSyncCron } = require("./cron");
 const { isTruthyEnvFlag } = require("../helpers");
 
@@ -55,6 +55,7 @@ const createOnboardingService = ({
 
     fs.mkdirSync(OPENCLAW_DIR, { recursive: true });
     fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+    syncBootstrapPromptFiles({ fs, workspaceDir: WORKSPACE_DIR });
 
     if (!fs.existsSync(`${OPENCLAW_DIR}/.git`)) {
       await shellCmd(
@@ -101,20 +102,6 @@ const createOnboardingService = ({
     writeSanitizedOpenclawConfig({ fs, openclawDir: OPENCLAW_DIR, varMap });
     ensureGatewayProxyConfig(getBaseUrl(req));
 
-    appendTemplateIfMissing({
-      fs,
-      targetPath: `${WORKSPACE_DIR}/AGENTS.md`,
-      templatePath: "/app/setup/AGENTS.md.append",
-      marker: "No YOLO System Changes",
-      logPrefix: "AGENTS.md",
-    });
-    appendTemplateIfMissing({
-      fs,
-      targetPath: `${WORKSPACE_DIR}/TOOLS.md`,
-      templatePath: "/app/setup/TOOLS.md.append",
-      marker: "Git Discipline",
-      logPrefix: "TOOLS.md",
-    });
     installControlUiSkill({ fs, openclawDir: OPENCLAW_DIR, baseUrl: getBaseUrl(req) });
 
     const shouldForcePush = isTruthyEnvFlag(process.env.OPENCLAW_DEBUG_FORCE_PUSH);

@@ -34,6 +34,7 @@ const { createCommands } = require("./server/commands");
 const { createAuthProfiles } = require("./server/auth-profiles");
 const { createLoginThrottle } = require("./server/login-throttle");
 const { createOpenclawVersionService } = require("./server/openclaw-version");
+const { syncBootstrapPromptFiles } = require("./server/onboarding/workspace");
 
 const { registerAuthRoutes } = require("./server/routes/auth");
 const { registerPageRoutes } = require("./server/routes/pages");
@@ -148,6 +149,7 @@ server.on("upgrade", (req, socket, head) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[wrapper] Express listening on :${PORT}`);
+  syncBootstrapPromptFiles({ fs, workspaceDir: constants.WORKSPACE_DIR });
   if (isOnboarded()) {
     reloadEnv();
     syncChannelConfig(readEnvFile());

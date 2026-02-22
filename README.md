@@ -11,6 +11,7 @@ Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegr
 - **Telegram or Discord** configured out of the box (add/remove channels anytime via the UI)
 - **Google Workspace integration** — connect Gmail, Calendar, Drive, Contacts, and Sheets with a few clicks via built-in OAuth flow
 - **Secrets never committed** — raw API keys are replaced with `${ENV_VAR}` references before pushing to GitHub
+- **Anti-drift prompts** — improve change visibility and reduce silent/partial edits so your OpenClaw project stays stable over time
 - **Setup UI** — web-based onboarding, env var management, channel pairing, and gateway control
 - **Webhook proxy** — single exposed port handles both the setup UI and gateway webhooks
 
@@ -138,8 +139,9 @@ Internet → Railway :3000 (Express)
 ├── .gitignore             ← Excludes keys, logs, caches
 ├── agents/                ← Session state
 └── workspace/             ← Agent workspace
-    ├── AGENTS.md          ← Agent instructions
-    ├── TOOLS.md           ← Tool notes + git discipline + env var guidance
+    ├── hooks/bootstrap/   ← Deploy-synced prompt templates
+    │   ├── AGENTS.md      ← Injected by bootstrap-extra-files
+    │   └── TOOLS.md       ← Injected by bootstrap-extra-files
     ├── HEARTBEAT.md       ← Periodic check instructions
     └── memory/            ← Agent memory
 
@@ -151,13 +153,13 @@ Internet → Railway :3000 (Express)
 1. Container starts, installs dependencies
 2. Server starts and serves the setup UI at `/`
 3. User completes the welcome screen with required variables
-4. Server runs `openclaw onboard`, configures channels, sanitizes secrets
+4. Server runs `openclaw onboard`, configures channels, sanitizes secrets, and enables `bootstrap-extra-files` with `hooks/bootstrap/*`
 5. Everything committed and pushed to your GitHub repo
 6. Gateway starts
 
 ### Subsequent boots
 
-1. `/data/.env` is loaded, channel config synced to match available tokens
+1. `/data/.env` is loaded, bootstrap prompt templates are synced into `workspace/hooks/bootstrap`, and channel config is synced to match available tokens
 2. Gateway starts
 3. Setup UI available at `/` for managing env vars, channels, and pairings
 
