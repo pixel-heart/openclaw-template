@@ -1,33 +1,15 @@
-FROM node:22-slim AS deps
+FROM node:22-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ ca-certificates && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-FROM node:22-slim AS runtime
-
-RUN apt-get update && apt-get install -y --no-install-recommends git procps python3 make g++ ca-certificates && rm -rf /var/lib/apt/lists/*
-
-ARG GOG_VERSION=0.11.0
-RUN set -eux; \
-  apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*; \
-  curl -fsSL "https://github.com/steipete/gogcli/releases/download/v${GOG_VERSION}/gogcli_${GOG_VERSION}_linux_amd64.tar.gz" -o /tmp/gog.tar.gz; \
-  tar -xzf /tmp/gog.tar.gz -C /tmp/; \
-  mv /tmp/gog /usr/local/bin/gog; \
-  chmod +x /usr/local/bin/gog; \
-  rm -f /tmp/gog.tar.gz; \
-  apt-get purge -y --auto-remove curl
+RUN apt-get update && apt-get install -y git curl procps python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY --from=deps /app/node_modules /app/node_modules
-COPY package.json package-lock.json ./
-COPY . .
+COPY package.json ./
+RUN npm install --omit=dev && npm cache clean --force
 
 ENV PATH="/app/node_modules/.bin:$PATH"
+
+COPY . .
 
 RUN mkdir -p /data
 RUN chmod +x scripts/setup.sh
