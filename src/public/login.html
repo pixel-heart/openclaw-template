@@ -42,11 +42,21 @@
     </form>
   </div>
   <script>
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
+    const formEl = document.getElementById('login-form');
+    const submitButtonEl = formEl.querySelector('button[type="submit"]');
+
+    const setPendingState = (isPending) => {
+      submitButtonEl.disabled = isPending;
+      submitButtonEl.classList.toggle('opacity-70', isPending);
+      submitButtonEl.classList.toggle('cursor-not-allowed', isPending);
+    };
+
+    formEl.addEventListener('submit', async (e) => {
       e.preventDefault();
       const password = document.getElementById('password').value;
       const errorEl = document.getElementById('error');
       errorEl.classList.add('hidden');
+      setPendingState(true);
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
@@ -57,12 +67,22 @@
         if (data.ok) {
           window.location.href = '/';
         } else {
-          errorEl.textContent = data.error || 'Login failed';
+          if (res.status === 429) {
+            const retryAfterFromHeader = Number.parseInt(res.headers.get('retry-after') || '0', 10);
+            const retryAfterSec = Number.isFinite(data.retryAfterSec) && data.retryAfterSec > 0
+              ? data.retryAfterSec
+              : (Number.isFinite(retryAfterFromHeader) && retryAfterFromHeader > 0 ? retryAfterFromHeader : 30);
+            errorEl.textContent = `Too many attempts. Try again in ${retryAfterSec}s.`;
+          } else {
+            errorEl.textContent = data.error || 'Login failed';
+          }
           errorEl.classList.remove('hidden');
         }
       } catch {
         errorEl.textContent = 'Connection error';
         errorEl.classList.remove('hidden');
+      } finally {
+        setPendingState(false);
       }
     });
   </script>

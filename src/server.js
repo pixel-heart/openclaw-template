@@ -25,6 +25,39 @@ const CODEX_OAUTH_SCOPE = "openid profile email offline_access";
 const CODEX_JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const kCodexOauthStateTtlMs = 10 * 60 * 1000;
 const kCodexOauthStates = new Map();
+const parsePositiveIntEnv = (value, fallbackValue) => {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackValue;
+};
+const kTrustProxyHops = parsePositiveIntEnv(process.env.TRUST_PROXY_HOPS, 1);
+const kLoginWindowMs = parsePositiveIntEnv(
+  process.env.LOGIN_RATE_WINDOW_MS,
+  10 * 60 * 1000
+);
+const kLoginMaxAttempts = parsePositiveIntEnv(
+  process.env.LOGIN_RATE_MAX_ATTEMPTS,
+  5
+);
+const kLoginBaseLockMs = parsePositiveIntEnv(
+  process.env.LOGIN_RATE_BASE_LOCK_MS,
+  60 * 1000
+);
+const kLoginMaxLockMs = parsePositiveIntEnv(
+  process.env.LOGIN_RATE_MAX_LOCK_MS,
+  15 * 60 * 1000
+);
+const kLoginCleanupIntervalMs = parsePositiveIntEnv(
+  process.env.LOGIN_RATE_CLEANUP_INTERVAL_MS,
+  60 * 1000
+);
+const kLoginStateTtlMs = Math.max(
+  parsePositiveIntEnv(
+    process.env.LOGIN_RATE_STATE_TTL_MS,
+    Math.max(kLoginWindowMs, kLoginMaxLockMs) * 3
+  ),
+  kLoginMaxLockMs
+);
+const kLoginAttemptStates = new Map();
 const kOnboardingModelProviders = new Set([
   "anthropic",
   "openai",
@@ -367,6 +400,84 @@ const cleanupCodexOauthStates = () => {
   }
 };
 
+const normalizeIp = (ip) => String(ip || "").replace(/^::ffff:/, "");
+
+const getClientKey = (req) =>
+  normalizeIp(
+    req.ip || req.headers["x-forwarded-for"] || req.socket?.remoteAddress || ""
+  ) || "unknown";
+
+const getOrCreateLoginAttemptState = (clientKey, now) => {
+  const existing = kLoginAttemptStates.get(clientKey);
+  if (existing) {
+    existing.lastSeenAt = now;
+    return existing;
+  }
+  const next = {
+    attempts: 0,
+    windowStart: now,
+    lockUntil: 0,
+    failStreak: 0,
+    lastSeenAt: now,
+  };
+  kLoginAttemptStates.set(clientKey, next);
+  return next;
+};
+
+const evaluateLoginThrottle = (state, now) => {
+  if (!state) return { blocked: false, retryAfterSec: 0 };
+  if (state.lockUntil > now) {
+    return {
+      blocked: true,
+      retryAfterSec: Math.max(1, Math.ceil((state.lockUntil - now) / 1000)),
+    };
+  }
+  if (now - state.windowStart >= kLoginWindowMs) {
+    state.attempts = 0;
+    state.windowStart = now;
+  }
+  return { blocked: false, retryAfterSec: 0 };
+};
+
+const recordLoginFailure = (state, now) => {
+  if (!state) return { lockMs: 0, locked: false };
+  if (now - state.windowStart >= kLoginWindowMs) {
+    state.attempts = 0;
+    state.windowStart = now;
+  }
+  state.attempts += 1;
+  state.lastSeenAt = now;
+  if (state.attempts < kLoginMaxAttempts) {
+    return { lockMs: 0, locked: false };
+  }
+  state.failStreak += 1;
+  state.attempts = 0;
+  state.windowStart = now;
+  const lockMultiplier = Math.max(1, 2 ** (state.failStreak - 1));
+  const lockMs = Math.min(kLoginBaseLockMs * lockMultiplier, kLoginMaxLockMs);
+  state.lockUntil = now + lockMs;
+  return { lockMs, locked: true };
+};
+
+const recordLoginSuccess = (clientKey) => {
+  if (!clientKey) return;
+  kLoginAttemptStates.delete(clientKey);
+};
+
+const cleanupLoginAttemptStates = () => {
+  const now = Date.now();
+  for (const [key, state] of kLoginAttemptStates.entries()) {
+    if (!state) {
+      kLoginAttemptStates.delete(key);
+      continue;
+    }
+    if (state.lockUntil > now) continue;
+    if (now - state.lastSeenAt > kLoginStateTtlMs) {
+      kLoginAttemptStates.delete(key);
+    }
+  }
+};
+
 const resolveGithubRepoUrl = (repoInput) => {
   const cleaned = String(repoInput || "")
     .trim()
@@ -636,6 +747,7 @@ proxy.on("error", (err, req, res) => {
 // ============================================================
 
 const app = express();
+app.set("trust proxy", kTrustProxyHops);
 app.use(express.json());
 
 const SETUP_PASSWORD = process.env.SETUP_PASSWORD || "";
@@ -661,8 +773,33 @@ app.get("/health", async (req, res) => {
 // Auth: login endpoint
 app.post("/api/auth/login", (req, res) => {
   if (!SETUP_PASSWORD) return res.json({ ok: true });
+  const now = Date.now();
+  const clientKey = getClientKey(req);
+  const state = getOrCreateLoginAttemptState(clientKey, now);
+  const throttle = evaluateLoginThrottle(state, now);
+  if (throttle.blocked) {
+    res.set("Retry-After", String(throttle.retryAfterSec));
+    return res.status(429).json({
+      ok: false,
+      error: "Too many attempts. Try again shortly.",
+      retryAfterSec: throttle.retryAfterSec,
+    });
+  }
   if (req.body.password !== SETUP_PASSWORD)
-    return res.status(401).json({ ok: false, error: "Wrong password" });
+    {
+      const failure = recordLoginFailure(state, now);
+      if (failure.locked) {
+        const retryAfterSec = Math.max(1, Math.ceil(failure.lockMs / 1000));
+        res.set("Retry-After", String(retryAfterSec));
+        return res.status(429).json({
+          ok: false,
+          error: "Too many attempts. Try again shortly.",
+          retryAfterSec,
+        });
+      }
+      return res.status(401).json({ ok: false, error: "Invalid credentials" });
+    }
+  recordLoginSuccess(clientKey);
   const token = crypto.randomBytes(32).toString("hex");
   kAuthTokens.add(token);
   res.cookie("setup_token", token, {
@@ -672,6 +809,9 @@ app.post("/api/auth/login", (req, res) => {
   });
   res.json({ ok: true });
 });
+setInterval(() => {
+  cleanupLoginAttemptStates();
+}, kLoginCleanupIntervalMs).unref();
 
 // Auth middleware: protect setup UI + API when SETUP_PASSWORD is set
 const requireAuth = (req, res, next) => {
