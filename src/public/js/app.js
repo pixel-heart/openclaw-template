@@ -6,6 +6,9 @@ import {
   fetchPairings,
   approvePairing,
   rejectPairing,
+  fetchDevicePairings,
+  approveDevice,
+  rejectDevice,
   fetchOnboardStatus,
   fetchDashboardUrl,
 } from "./lib/api.js";
@@ -13,6 +16,7 @@ import { usePolling } from "./hooks/usePolling.js";
 import { Gateway } from "./components/gateway.js";
 import { Channels, ALL_CHANNELS } from "./components/channels.js";
 import { Pairings } from "./components/pairings.js";
+import { DevicePairings } from "./components/device-pairings.js";
 import { Google } from "./components/google.js";
 import { Models } from "./components/models.js";
 import { Welcome } from "./components/welcome.js";
@@ -70,9 +74,32 @@ const GeneralTab = ({ onSwitchTab }) => {
     refreshAfterAction();
   };
 
+  const devicePoll = usePolling(
+    async () => {
+      const d = await fetchDevicePairings();
+      return d.pending || [];
+    },
+    2000,
+    { enabled: gatewayStatus === "running" },
+  );
+  const devicePending = devicePoll.data || [];
+
+  const handleDeviceApprove = async (id) => {
+    await approveDevice(id);
+    setTimeout(devicePoll.refresh, 500);
+    setTimeout(devicePoll.refresh, 2000);
+  };
+
+  const handleDeviceReject = async (id) => {
+    await rejectDevice(id);
+    setTimeout(devicePoll.refresh, 500);
+    setTimeout(devicePoll.refresh, 2000);
+  };
+
   const fullRefresh = () => {
     statusPoll.refresh();
     pairingsPoll.refresh();
+    devicePoll.refresh();
     setGoogleKey((k) => k + 1);
   };
 
@@ -130,6 +157,11 @@ const GeneralTab = ({ onSwitchTab }) => {
             ${dashboardLoading ? 'Opening...' : 'Open'}
           </button>
         </div>
+        <${DevicePairings}
+          pending=${devicePending}
+          onApprove=${handleDeviceApprove}
+          onReject=${handleDeviceReject}
+        />
       </div>
 
       <p class="text-center text-gray-600 text-xs">

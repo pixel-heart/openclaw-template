@@ -1509,6 +1509,49 @@ app.post("/api/pairings/:id/reject", async (req, res) => {
   res.json(result);
 });
 
+// Cache for device pairing results
+let devicePairingCache = { pending: [], ts: 0 };
+const kDevicePairingCacheTtl = 3000;
+
+// API: list pending device pairings
+app.get("/api/devices", async (req, res) => {
+  if (!isOnboarded()) return res.json({ pending: [] });
+  if (Date.now() - devicePairingCache.ts < kDevicePairingCacheTtl) {
+    return res.json({ pending: devicePairingCache.pending });
+  }
+  const result = await clawCmd("devices list --json", { quiet: true });
+  if (!result.ok) {
+    return res.json({ pending: [] });
+  }
+  try {
+    const parsed = JSON.parse(result.stdout);
+    const pending = (parsed.pending || []).map((d) => ({
+      id: d.requestId || d.id,
+      label: d.userAgent || d.ua || d.label || "Browser",
+      ip: d.ip || d.remoteAddress || null,
+      ts: d.timestamp || d.ts || null,
+    }));
+    devicePairingCache = { pending, ts: Date.now() };
+    res.json({ pending });
+  } catch {
+    res.json({ pending: [] });
+  }
+});
+
+// API: approve device pairing
+app.post("/api/devices/:id/approve", async (req, res) => {
+  const result = await clawCmd(`devices approve ${req.params.id}`);
+  devicePairingCache.ts = 0;
+  res.json(result);
+});
+
+// API: reject device pairing
+app.post("/api/devices/:id/reject", async (req, res) => {
+  const result = await clawCmd(`devices reject ${req.params.id}`);
+  devicePairingCache.ts = 0;
+  res.json(result);
+});
+
 // ============================================================
 // OpenAI Codex OAuth flow
 // ============================================================
@@ -2417,6 +2460,7 @@ const SETUP_API_PREFIXES = [
   "/api/env",
   "/api/auth",
   "/api/openclaw",
+  "/api/devices",
 ];
 app.all("/api/*", (req, res) => {
   if (SETUP_API_PREFIXES.some((p) => req.path.startsWith(p))) return;

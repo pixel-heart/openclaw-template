@@ -80,6 +80,21 @@ export async function updateOpenclaw() {
   return res.json();
 }
 
+export async function fetchDevicePairings() {
+  const res = await authFetch('/api/devices');
+  return res.json();
+}
+
+export async function approveDevice(id) {
+  const res = await authFetch(`/api/devices/${id}/approve`, { method: 'POST' });
+  return res.json();
+}
+
+export async function rejectDevice(id) {
+  const res = await authFetch(`/api/devices/${id}/reject`, { method: 'POST' });
+  return res.json();
+}
+
 export async function fetchOnboardStatus() {
   const res = await authFetch('/api/onboard/status');
   return res.json();
