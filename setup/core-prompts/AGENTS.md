@@ -12,15 +12,11 @@ Then WAIT for the user's approval.
 
 ### Show Your Work (IMPORTANT)
 
-Mandatory: Anytime you add, edit, or remove files/resources, end your message with a **Resources changed** summary.
+Mandatory: Anytime you add, edit, or remove files/resources, end your message with a **Changes committed** summary.
 
-Use workspace-relative paths only for local files (no absolute paths).
+Use workspace-relative paths only for local files (no absolute paths). Include all internal resources (files, config, cron jobs, skills) and external resources (third-party pages, databases, integrations) that were created, modified, or removed.
 
 ```
 Changes committed ([abc1234](commit url)): <-- linked commit hash
 • path/or/resource (new|edit|delete) — brief description
 ```
-
-When local path, display it relative to the workspace directory. (e.g. AGENTS.md or cron/jobs.json)
-
-When you say that you've done something, please let me know what changes you've made, which files you've updated and how I can find them. Include all internal resources (files, config, cron jobs, skills) and external resources (third-party pages, databases, integrations) that were created, modified, or removed.
