@@ -3,6 +3,8 @@ const fs = require("fs");
 const net = require("net");
 const { OPENCLAW_DIR, GATEWAY_HOST, GATEWAY_PORT, kChannelDefs } = require("./constants");
 
+let gatewayChild = null;
+
 const gatewayEnv = () => ({
   ...process.env,
   OPENCLAW_HOME: "/data",
@@ -47,6 +49,24 @@ const runGatewayCmd = (cmd) => {
   }
 };
 
+const launchGatewayProcess = () => {
+  if (gatewayChild && gatewayChild.exitCode === null && !gatewayChild.killed) {
+    console.log("[wrapper] Managed gateway process already running — skipping launch");
+    return;
+  }
+  const child = spawn("openclaw", ["gateway", "run"], {
+    env: gatewayEnv(),
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  gatewayChild = child;
+  child.stdout.on("data", (d) => process.stdout.write(`[gateway] ${d}`));
+  child.stderr.on("data", (d) => process.stderr.write(`[gateway] ${d}`));
+  child.on("exit", (code) => {
+    console.log(`[wrapper] Gateway launcher exited with code ${code}`);
+    if (gatewayChild === child) gatewayChild = null;
+  });
+};
+
 const startGateway = async () => {
   if (!isOnboarded()) {
     console.log("[wrapper] Not onboarded yet — skipping gateway start");
@@ -57,21 +77,34 @@ const startGateway = async () => {
     return;
   }
   console.log("[wrapper] Starting openclaw gateway...");
-  const child = spawn("openclaw", ["gateway", "run"], {
-    env: gatewayEnv(),
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdout.on("data", (d) => process.stdout.write(`[gateway] ${d}`));
-  child.stderr.on("data", (d) => process.stderr.write(`[gateway] ${d}`));
-  child.on("exit", (code) => {
-    console.log(`[wrapper] Gateway launcher exited with code ${code}`);
-  });
+  launchGatewayProcess();
 };
 
 const restartGateway = (reloadEnv) => {
   reloadEnv();
+  if (gatewayChild && gatewayChild.exitCode === null && !gatewayChild.killed) {
+    console.log("[wrapper] Stopping managed gateway process...");
+    try {
+      gatewayChild.kill("SIGTERM");
+      gatewayChild = null;
+    } catch (e) {
+      console.log(`[wrapper] Failed to stop managed gateway process: ${e.message}`);
+      runGatewayCmd("stop");
+    }
+  } else {
+    runGatewayCmd("stop");
+  }
   runGatewayCmd("install --force");
-  runGatewayCmd("restart");
+  const launchWhenReady = async () => {
+    const waitUntil = Date.now() + 8000;
+    while (Date.now() < waitUntil) {
+      if (!(await isGatewayRunning())) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    console.log("[wrapper] Starting openclaw gateway with refreshed environment...");
+    launchGatewayProcess();
+  };
+  void launchWhenReady();
 };
 
 const attachGatewaySignalHandlers = () => {

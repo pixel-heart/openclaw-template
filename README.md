@@ -18,6 +18,7 @@ Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegr
 - **Webhook proxy** — single exposed port handles both the setup UI and gateway webhooks
 
 ## Convenient Setup UI
+
 <img width="2526" height="1364" alt="image" src="https://github.com/user-attachments/assets/122b3ff4-b828-4785-8a05-f765d3ac5ea1" />
 
 ## Deploy
@@ -92,6 +93,7 @@ The **Envars** tab lets you:
 - Add custom variables — supports pasting multiple `KEY=VALUE` lines at once
 - Delete custom variables with the ✕ button
 - Save changes to the persistent `/data/.env` file
+- Apply saved changes to bot runtime by clicking **Restart Gateway** after saving changes
 
 The **Models** tab lets you:
 
@@ -104,18 +106,18 @@ The server watches `/data/.env` for changes — including ones written by the Op
 
 ### All configurable variables
 
-| Variable                | Group       | Description                                                                                                                    |
-| ----------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `ANTHROPIC_API_KEY`     | AI Provider | From [console.anthropic.com](https://console.anthropic.com/) (recommended)                                                     |
-| `ANTHROPIC_TOKEN`       | AI Provider | From `claude setup-token`                                                                                                      |
-| `OPENAI_API_KEY`        | AI Provider | From [platform.openai.com](https://platform.openai.com/)                                                                       |
+| Variable                   | Group       | Description                                                                                                                    |
+| -------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `ANTHROPIC_API_KEY`        | AI Provider | From [console.anthropic.com](https://console.anthropic.com/) (recommended)                                                     |
+| `ANTHROPIC_TOKEN`          | AI Provider | From `claude setup-token`                                                                                                      |
+| `OPENAI_API_KEY`           | AI Provider | From [platform.openai.com](https://platform.openai.com/)                                                                       |
 | `(no env var) Codex OAuth` | AI Provider | Connected via setup UI OAuth flow (ChatGPT subscription/Codex); stored in OpenClaw auth profiles                               |
-| `GEMINI_API_KEY`        | AI Provider | From [aistudio.google.com](https://aistudio.google.com/)                                                                       |
-| `GITHUB_TOKEN`          | GitHub      | Personal access token with `repo` scope from [github.com/settings/tokens](https://github.com/settings/tokens)                 |
-| `GITHUB_WORKSPACE_REPO` | GitHub      | `owner/repo` (or `https://github.com/owner/repo`)                                                                              |
-| `TELEGRAM_BOT_TOKEN`    | Channels    | From [@BotFather](https://t.me/BotFather) · [full guide](https://docs.openclaw.ai/channels/telegram)                           |
-| `DISCORD_BOT_TOKEN`     | Channels    | From [Developer Portal](https://discord.com/developers/applications) · [full guide](https://docs.openclaw.ai/channels/discord) |
-| `BRAVE_API_KEY`         | Tools       | From [brave.com/search/api](https://brave.com/search/api/) — free tier available                                               |
+| `GEMINI_API_KEY`           | AI Provider | From [aistudio.google.com](https://aistudio.google.com/)                                                                       |
+| `GITHUB_TOKEN`             | GitHub      | Personal access token with `repo` scope from [github.com/settings/tokens](https://github.com/settings/tokens)                  |
+| `GITHUB_WORKSPACE_REPO`    | GitHub      | `owner/repo` (or `https://github.com/owner/repo`)                                                                              |
+| `TELEGRAM_BOT_TOKEN`       | Channels    | From [@BotFather](https://t.me/BotFather) · [full guide](https://docs.openclaw.ai/channels/telegram)                           |
+| `DISCORD_BOT_TOKEN`        | Channels    | From [Developer Portal](https://discord.com/developers/applications) · [full guide](https://docs.openclaw.ai/channels/discord) |
+| `BRAVE_API_KEY`            | Tools       | From [brave.com/search/api](https://brave.com/search/api/) — free tier available                                               |
 
 ## Architecture
 

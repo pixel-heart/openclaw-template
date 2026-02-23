@@ -1,7 +1,7 @@
 import { h } from "https://esm.sh/preact";
 import { useState, useEffect, useCallback } from "https://esm.sh/preact/hooks";
 import htm from "https://esm.sh/htm";
-import { fetchEnvVars, saveEnvVars } from "../lib/api.js";
+import { fetchEnvVars, saveEnvVars, restartGateway } from "../lib/api.js";
 import { showToast } from "./toast.js";
 const html = htm.bind(h);
 
@@ -85,6 +85,8 @@ export const Envars = () => {
   const [vars, setVars] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [restartingGateway, setRestartingGateway] = useState(false);
+  const [restartRequired, setRestartRequired] = useState(false);
   const [newKey, setNewKey] = useState("");
 
   const load = useCallback(async () => {
@@ -92,6 +94,7 @@ export const Envars = () => {
       const data = await fetchEnvVars();
       setVars(data.vars || []);
       setDirty(false);
+      setRestartRequired(!!data.restartRequired);
     } catch (err) {
       console.error("Failed to load env vars:", err);
     }
@@ -116,13 +119,34 @@ export const Envars = () => {
     setSaving(true);
     try {
       const toSave = vars.filter((v) => v.editable).map((v) => ({ key: v.key, value: v.value }));
-      await saveEnvVars(toSave);
-      showToast("Environment variables saved", "success");
+      const result = await saveEnvVars(toSave);
+      const needsRestart = !!result?.restartRequired;
+      setRestartRequired(needsRestart);
+      showToast(
+        needsRestart
+          ? "Environment variables saved. Restart gateway to apply."
+          : "Environment variables saved",
+        "success",
+      );
       setDirty(false);
     } catch (err) {
       showToast("Failed to save: " + err.message, "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRestartGateway = async () => {
+    if (restartingGateway) return;
+    setRestartingGateway(true);
+    try {
+      await restartGateway();
+      setRestartRequired(false);
+      showToast("Gateway restarted", "success");
+    } catch (err) {
+      showToast("Restart failed: " + err.message, "error");
+    } finally {
+      setRestartingGateway(false);
     }
   };
 
@@ -272,11 +296,31 @@ export const Envars = () => {
         </div>
       </div>
 
+      ${restartRequired
+        ? html`<div
+            class="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-center justify-between gap-3"
+          >
+            <p class="text-sm text-yellow-200">
+              Gateway restart required to apply env changes.
+            </p>
+            <button
+              onclick=${handleRestartGateway}
+              disabled=${restartingGateway}
+              class="text-xs px-2.5 py-1 rounded-lg border border-yellow-500/40 text-yellow-200 hover:border-yellow-400 hover:text-yellow-100 transition-colors shrink-0 ${restartingGateway
+                ? "opacity-60 cursor-not-allowed"
+                : ""}"
+            >
+              ${restartingGateway ? "Restarting..." : "Restart Gateway"}
+            </button>
+          </div>`
+        : null}
+
       <button
         onclick=${handleSave}
-        disabled=${!dirty || saving}
+        disabled=${!dirty || saving || restartingGateway}
         class="w-full text-sm font-medium px-4 py-2.5 rounded-xl transition-all ${dirty &&
-        !saving
+        !saving &&
+        !restartingGateway
           ? "bg-white text-black hover:opacity-85"
           : "bg-gray-800 text-gray-500 cursor-not-allowed"}"
       >

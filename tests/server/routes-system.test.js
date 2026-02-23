@@ -82,6 +82,7 @@ describe("server/routes/system", () => {
       ]),
     );
     expect(res.body.vars.some((entry) => entry.key === "PORT")).toBe(false);
+    expect(res.body.restartRequired).toBe(false);
   });
 
   it("filters system vars and syncs channels on PUT /api/env", async () => {
@@ -99,7 +100,7 @@ describe("server/routes/system", () => {
     const res = await request(app).put("/api/env").send(payload);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, changed: true });
+    expect(res.body).toEqual({ ok: true, changed: true, restartRequired: true });
     expect(deps.writeEnvFile).toHaveBeenCalledWith([
       { key: "OPENAI_API_KEY", value: "abc" },
     ]);
@@ -113,6 +114,56 @@ describe("server/routes/system", () => {
       [{ key: "OPENAI_API_KEY", value: "abc" }],
       "add",
     );
+    expect(deps.restartGateway).not.toHaveBeenCalled();
+  });
+
+  it("does not restart gateway when env is unchanged", async () => {
+    const deps = createSystemDeps();
+    deps.reloadEnv.mockReturnValue(false);
+    const app = createApp(deps);
+
+    const res = await request(app).put("/api/env").send({
+      vars: [{ key: "OPENAI_API_KEY", value: "same" }],
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, changed: false, restartRequired: false });
+    expect(deps.restartGateway).not.toHaveBeenCalled();
+  });
+
+  it("keeps restartRequired true until gateway restart", async () => {
+    const deps = createSystemDeps();
+    const app = createApp(deps);
+
+    const firstSave = await request(app).put("/api/env").send({
+      vars: [{ key: "OPENAI_API_KEY", value: "abc" }],
+    });
+    expect(firstSave.status).toBe(200);
+    expect(firstSave.body.restartRequired).toBe(true);
+
+    deps.reloadEnv.mockReturnValue(false);
+    const secondSave = await request(app).put("/api/env").send({
+      vars: [{ key: "OPENAI_API_KEY", value: "abc" }],
+    });
+    expect(secondSave.status).toBe(200);
+    expect(secondSave.body).toEqual({
+      ok: true,
+      changed: false,
+      restartRequired: true,
+    });
+
+    const envBeforeRestart = await request(app).get("/api/env");
+    expect(envBeforeRestart.status).toBe(200);
+    expect(envBeforeRestart.body.restartRequired).toBe(true);
+
+    const restart = await request(app).post("/api/gateway/restart");
+    expect(restart.status).toBe(200);
+    expect(restart.body).toEqual({ ok: true });
+    expect(deps.restartGateway).toHaveBeenCalledTimes(1);
+
+    const envAfterRestart = await request(app).get("/api/env");
+    expect(envAfterRestart.status).toBe(200);
+    expect(envAfterRestart.body.restartRequired).toBe(false);
   });
 
   it("returns 400 when vars payload is missing", async () => {

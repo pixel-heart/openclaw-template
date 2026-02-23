@@ -16,6 +16,7 @@ const registerSystemRoutes = ({
   restartGateway,
   OPENCLAW_DIR,
 }) => {
+  let envRestartPending = false;
   const kSystemCronPath = "/etc/cron.d/openclaw-hourly-sync";
   const kSystemCronConfigPath = `${OPENCLAW_DIR}/cron/system-sync.json`;
   const kSystemCronScriptPath = `${OPENCLAW_DIR}/hourly-git-sync.sh`;
@@ -95,7 +96,7 @@ const registerSystemRoutes = ({
       });
     }
 
-    res.json({ vars: merged });
+    res.json({ vars: merged, restartRequired: envRestartPending && isOnboarded() });
   });
 
   app.put("/api/env", (req, res) => {
@@ -108,10 +109,14 @@ const registerSystemRoutes = ({
     syncChannelConfig(filtered, "remove");
     writeEnvFile(filtered);
     const changed = reloadEnv();
+    if (changed && isOnboarded()) {
+      envRestartPending = true;
+    }
+    const restartRequired = envRestartPending && isOnboarded();
     console.log(`[wrapper] Env vars saved (${filtered.length} vars, changed=${changed})`);
     syncChannelConfig(filtered, "add");
 
-    res.json({ ok: true, changed });
+    res.json({ ok: true, changed, restartRequired });
   });
 
   app.get("/api/status", async (req, res) => {
@@ -186,6 +191,7 @@ const registerSystemRoutes = ({
       return res.status(400).json({ ok: false, error: "Not onboarded" });
     }
     restartGateway();
+    envRestartPending = false;
     res.json({ ok: true });
   });
 };
