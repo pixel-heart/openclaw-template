@@ -95,6 +95,26 @@ describe("server/routes/onboarding", () => {
     expect(res.body).toEqual({ ok: false, error: "A model selection is required" });
   });
 
+  it("rejects overly large env var values before running onboarding", async () => {
+    const deps = createBaseDeps();
+    const app = createApp(deps);
+    const body = makeValidBody();
+    body.vars = body.vars.map((entry) =>
+      entry.key === "OPENAI_API_KEY"
+        ? { ...entry, value: "x".repeat(5000) }
+        : entry,
+    );
+
+    const res = await request(app).post("/api/onboard").send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      ok: false,
+      error: "Value too long for OPENAI_API_KEY (max 4096 chars)",
+    });
+    expect(deps.shellCmd).not.toHaveBeenCalled();
+  });
+
   it("requires codex oauth or API key for openai-codex provider", async () => {
     const deps = createBaseDeps({ hasCodexOauth: false });
     const app = createApp(deps);
@@ -229,5 +249,22 @@ describe("server/routes/onboarding", () => {
       cmd.includes('git commit -m "initial setup"'),
     );
     expect(initialPushCall[0]).toContain("git push -u --force origin main");
+  });
+
+  it("sanitizes onboarding command failures to avoid leaking secrets", async () => {
+    const deps = createBaseDeps();
+    const app = createApp(deps);
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    deps.shellCmd.mockRejectedValueOnce(
+      new Error('Command failed: openclaw onboard --openai-api-key "sk-test-secret-value"'),
+    );
+
+    const res = await request(app).post("/api/onboard").send(makeValidBody());
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({
+      ok: false,
+      error: "Onboarding command failed. Please verify credentials and try again.",
+    });
   });
 });

@@ -19,7 +19,7 @@ const kHintByKey = {
   ANTHROPIC_TOKEN: html`From <code class="text-xs bg-black/30 px-1 rounded">claude setup-token</code>`,
   OPENAI_API_KEY: html`From <a href="https://platform.openai.com" target="_blank" class="text-blue-400 hover:underline">platform.openai.com</a>`,
   GEMINI_API_KEY: html`From <a href="https://aistudio.google.com" target="_blank" class="text-blue-400 hover:underline">aistudio.google.com</a>`,
-  GITHUB_TOKEN: html`Create at <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-400 hover:underline">github.com/settings/tokens</a> with <code class="text-xs bg-black/30 px-1 rounded">repo</code> scope`,
+  GITHUB_TOKEN: html`Use a <strong>classic PAT</strong> with <code class="text-xs bg-black/30 px-1 rounded">repo</code> scope from <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-400 hover:underline">github.com/settings/tokens</a>. Fine-grained tokens can fail unless they include equivalent repo write permissions.`,
   GITHUB_WORKSPACE_REPO: html`Use <code class="text-xs bg-black/30 px-1 rounded">owner/repo</code> or <code class="text-xs bg-black/30 px-1 rounded">https://github.com/owner/repo</code>`,
   TELEGRAM_BOT_TOKEN: html`From <a href="https://t.me/BotFather" target="_blank" class="text-blue-400 hover:underline">@BotFather</a> · <a href="https://docs.openclaw.ai/channels/telegram" target="_blank" class="text-blue-400 hover:underline">full guide</a>`,
   DISCORD_BOT_TOKEN: html`From <a href="https://discord.com/developers/applications" target="_blank" class="text-blue-400 hover:underline">Developer Portal</a> · <a href="https://docs.openclaw.ai/channels/discord" target="_blank" class="text-blue-400 hover:underline">full guide</a>`,
