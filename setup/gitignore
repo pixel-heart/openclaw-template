@@ -8,4 +8,5 @@
 !skills/**
 !cron/
 !cron/jobs.json
+!openclaw.json
 !.gitignore
