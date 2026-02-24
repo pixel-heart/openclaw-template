@@ -2,14 +2,17 @@ const { exec, execSync } = require("child_process");
 const {
   kVersionCacheTtlMs,
   kLatestVersionCacheTtlMs,
-  kOpenclawRegistryUrl,
   kAppDir,
 } = require("./constants");
-const { normalizeOpenclawVersion, compareVersionParts } = require("./helpers");
+const { normalizeOpenclawVersion } = require("./helpers");
 
 const createOpenclawVersionService = ({ gatewayEnv, restartGateway, isOnboarded }) => {
   let kOpenclawVersionCache = { value: null, fetchedAt: 0 };
-  let kLatestOpenclawVersionCache = { value: null, fetchedAt: 0 };
+  let kOpenclawUpdateStatusCache = {
+    latestVersion: null,
+    hasUpdate: false,
+    fetchedAt: 0,
+  };
   let kOpenclawUpdateInProgress = false;
 
   const readOpenclawVersion = () => {
@@ -34,32 +37,50 @@ const createOpenclawVersionService = ({ gatewayEnv, restartGateway, isOnboarded 
     }
   };
 
-  const fetchLatestOpenclawVersion = async ({ refresh = false } = {}) => {
+  const readOpenclawUpdateStatus = ({ refresh = false } = {}) => {
     const now = Date.now();
     if (
       !refresh &&
-      kLatestOpenclawVersionCache.value &&
-      now - kLatestOpenclawVersionCache.fetchedAt < kLatestVersionCacheTtlMs
+      kOpenclawUpdateStatusCache.fetchedAt &&
+      now - kOpenclawUpdateStatusCache.fetchedAt < kLatestVersionCacheTtlMs
     ) {
-      return kLatestOpenclawVersionCache.value;
+      return {
+        latestVersion: kOpenclawUpdateStatusCache.latestVersion,
+        hasUpdate: kOpenclawUpdateStatusCache.hasUpdate,
+      };
     }
-    const res = await fetch(kOpenclawRegistryUrl, {
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) {
-      throw new Error(`Registry returned ${res.status}`);
+    try {
+      console.log("[wrapper] Running: openclaw update status --json");
+      const raw = execSync("openclaw update status --json", {
+        env: gatewayEnv(),
+        timeout: 8000,
+        encoding: "utf8",
+      }).trim();
+      const parsed = JSON.parse(raw);
+      const latestVersion = normalizeOpenclawVersion(
+        parsed?.availability?.latestVersion || parsed?.update?.registry?.latestVersion,
+      );
+      const hasUpdate = !!parsed?.availability?.available;
+      kOpenclawUpdateStatusCache = {
+        latestVersion,
+        hasUpdate,
+        fetchedAt: now,
+      };
+      console.log(
+        `[wrapper] openclaw update status: hasUpdate=${hasUpdate} latest=${latestVersion || "unknown"}`,
+      );
+      return { latestVersion, hasUpdate };
+    } catch (err) {
+      console.log(
+        `[wrapper] openclaw update status error: ${(err.message || "unknown").slice(0, 200)}`,
+      );
+      throw new Error(err.message || "Failed to read OpenClaw update status");
     }
-    const json = await res.json();
-    const latest = normalizeOpenclawVersion(json?.["dist-tags"]?.latest);
-    if (!latest) {
-      throw new Error("Latest version not found in npm metadata");
-    }
-    kLatestOpenclawVersionCache = { value: latest, fetchedAt: now };
-    return latest;
   };
 
   const installLatestOpenclaw = () =>
     new Promise((resolve, reject) => {
+      console.log("[wrapper] Running: npm install --omit=dev --no-save --package-lock=false openclaw@latest");
       exec(
         "npm install --omit=dev --no-save --package-lock=false openclaw@latest",
         {
@@ -75,10 +96,16 @@ const createOpenclawVersionService = ({ gatewayEnv, restartGateway, isOnboarded 
         (err, stdout, stderr) => {
           if (err) {
             const message = String(stderr || err.message || "").trim();
-            return reject(
-              new Error(message || "Failed to install openclaw@latest"),
-            );
+            console.log(`[wrapper] openclaw install error: ${message.slice(0, 200)}`);
+            return reject(new Error(message || "Failed to install openclaw@latest"));
           }
+          if (stdout && stdout.trim()) {
+            console.log(`[wrapper] openclaw install stdout: ${stdout.trim().slice(0, 300)}`);
+          }
+          if (stderr && stderr.trim()) {
+            console.log(`[wrapper] openclaw install stderr: ${stderr.trim().slice(0, 300)}`);
+          }
+          console.log("[wrapper] openclaw install completed");
           resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
         },
       );
@@ -87,19 +114,14 @@ const createOpenclawVersionService = ({ gatewayEnv, restartGateway, isOnboarded 
   const getVersionStatus = async (refresh) => {
     const currentVersion = readOpenclawVersion();
     try {
-      const latestVersion = await fetchLatestOpenclawVersion({ refresh });
-      const hasUpdate = !!(
-        currentVersion &&
-        latestVersion &&
-        compareVersionParts(latestVersion, currentVersion) > 0
-      );
+      const { latestVersion, hasUpdate } = readOpenclawUpdateStatus({ refresh });
       return { ok: true, currentVersion, latestVersion, hasUpdate };
     } catch (err) {
       return {
         ok: false,
         currentVersion,
-        latestVersion: kLatestOpenclawVersionCache.value,
-        hasUpdate: false,
+        latestVersion: kOpenclawUpdateStatusCache.latestVersion,
+        hasUpdate: kOpenclawUpdateStatusCache.hasUpdate,
         error: err.message || "Failed to fetch latest OpenClaw version",
       };
     }
@@ -116,21 +138,10 @@ const createOpenclawVersionService = ({ gatewayEnv, restartGateway, isOnboarded 
     kOpenclawUpdateInProgress = true;
     const previousVersion = readOpenclawVersion();
     try {
-      const latestBeforeUpdate =
-        (await fetchLatestOpenclawVersion({ refresh: true }).catch(() => null)) ||
-        kLatestOpenclawVersionCache.value;
       await installLatestOpenclaw();
       kOpenclawVersionCache = { value: null, fetchedAt: 0 };
       const currentVersion = readOpenclawVersion();
-      const latestVersion =
-        (await fetchLatestOpenclawVersion({ refresh: true }).catch(() => null)) ||
-        latestBeforeUpdate ||
-        kLatestOpenclawVersionCache.value;
-      const hasUpdate = !!(
-        currentVersion &&
-        latestVersion &&
-        compareVersionParts(latestVersion, currentVersion) > 0
-      );
+      const { latestVersion, hasUpdate } = readOpenclawUpdateStatus({ refresh: true });
       let restarted = false;
       if (isOnboarded()) {
         restartGateway();

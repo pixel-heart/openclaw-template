@@ -4,7 +4,7 @@
 
 Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegram or Discord, with your entire config and workspace backed up to GitHub.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/_S3bQQ?referralCode=jcFhp_)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/openclaw-fast-start?referralCode=jcFhp_&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 ## What you get
 
@@ -34,7 +34,7 @@ Only one variable is needed at deploy time:
 
 Click the button to deploy:
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/_S3bQQ?referralCode=jcFhp_)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/openclaw-fast-start?referralCode=jcFhp_&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 Everything else — AI keys, GitHub credentials, channel tokens — is configured through the setup UI after your first login.
 

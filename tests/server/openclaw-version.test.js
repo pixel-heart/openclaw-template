@@ -1,5 +1,4 @@
 const childProcess = require("child_process");
-const { kOpenclawRegistryUrl } = require("../../src/server/constants");
 
 const modulePath = require.resolve("../../src/server/openclaw-version");
 const originalExec = childProcess.exec;
@@ -30,10 +29,6 @@ const createService = ({ isOnboarded = false } = {}) => {
 };
 
 describe("server/openclaw-version", () => {
-  beforeEach(() => {
-    global.fetch = vi.fn();
-  });
-
   afterEach(() => {
     childProcess.exec = originalExec;
     childProcess.execSync = originalExecSync;
@@ -59,17 +54,16 @@ describe("server/openclaw-version", () => {
 
   it("returns update availability when latest version is newer", async () => {
     const { service, execSyncMock } = createService();
-    execSyncMock.mockReturnValue("openclaw 1.2.3");
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ "dist-tags": { latest: "1.3.0" } }),
-    });
+    execSyncMock
+      .mockReturnValueOnce("openclaw 1.2.3")
+      .mockReturnValueOnce(
+        JSON.stringify({
+          availability: { available: true, latestVersion: "1.3.0" },
+        }),
+      );
 
     const status = await service.getVersionStatus(false);
 
-    expect(global.fetch).toHaveBeenCalledWith(kOpenclawRegistryUrl, {
-      headers: { Accept: "application/json" },
-    });
     expect(status).toEqual({
       ok: true,
       currentVersion: "1.2.3",
@@ -78,10 +72,13 @@ describe("server/openclaw-version", () => {
     });
   });
 
-  it("returns error status when latest version fetch fails", async () => {
+  it("returns error status when update status command fails", async () => {
     const { service, execSyncMock } = createService();
-    execSyncMock.mockReturnValue("openclaw 1.2.3");
-    global.fetch.mockRejectedValue(new Error("registry offline"));
+    execSyncMock
+      .mockReturnValueOnce("openclaw 1.2.3")
+      .mockImplementationOnce(() => {
+        throw new Error("status check failed");
+      });
 
     const status = await service.getVersionStatus(false);
 
@@ -89,7 +86,7 @@ describe("server/openclaw-version", () => {
     expect(status.currentVersion).toBe("1.2.3");
     expect(status.latestVersion).toBe(null);
     expect(status.hasUpdate).toBe(false);
-    expect(status.error).toContain("registry offline");
+    expect(status.error).toContain("status check failed");
   });
 
   it("updates openclaw and restarts gateway when onboarded", async () => {
@@ -98,11 +95,12 @@ describe("server/openclaw-version", () => {
     });
     execSyncMock
       .mockReturnValueOnce("openclaw 1.0.0")
-      .mockReturnValueOnce("openclaw 1.1.0");
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ "dist-tags": { latest: "1.1.0" } }),
-    });
+      .mockReturnValueOnce("openclaw 1.1.0")
+      .mockReturnValueOnce(
+        JSON.stringify({
+          availability: { available: false, latestVersion: "1.1.0" },
+        }),
+      );
     execMock.mockImplementation((cmd, opts, callback) => {
       callback(null, "installed", "");
     });
@@ -121,15 +119,34 @@ describe("server/openclaw-version", () => {
         updated: true,
       }),
     );
+    expect(execMock).toHaveBeenCalledWith(
+      "npm install --omit=dev --no-save --package-lock=false openclaw@latest",
+      {
+        cwd: "/app",
+        env: expect.objectContaining({
+          npm_config_update_notifier: "false",
+          npm_config_fund: "false",
+          npm_config_audit: "false",
+        }),
+        timeout: 180000,
+      },
+      expect.any(Function),
+    );
     expect(restartGateway).toHaveBeenCalledTimes(1);
   });
 
   it("returns 409 while another update is in progress", async () => {
     const { service, execMock, execSyncMock } = createService();
-    execSyncMock.mockReturnValue("openclaw 1.0.0");
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ "dist-tags": { latest: "1.1.0" } }),
+    execSyncMock.mockImplementation((command) => {
+      if (command === "openclaw --version") {
+        return "openclaw 1.0.0";
+      }
+      if (command === "openclaw update status --json") {
+        return JSON.stringify({
+          availability: { available: true, latestVersion: "1.1.0" },
+        });
+      }
+      throw new Error(`Unexpected command: ${command}`);
     });
     let installCallback = null;
     execMock.mockImplementation((cmd, opts, callback) => {

@@ -82,18 +82,25 @@ describe("server/routes/system", () => {
       ]),
     );
     expect(res.body.vars.some((entry) => entry.key === "PORT")).toBe(false);
+    expect(res.body.vars.some((entry) => entry.key === "GITHUB_WORKSPACE_REPO")).toBe(
+      false,
+    );
     expect(res.body.restartRequired).toBe(false);
   });
 
   it("filters system vars and syncs channels on PUT /api/env", async () => {
     const deps = createSystemDeps();
     deps.reloadEnv.mockReturnValue(true);
+    deps.readEnvFile.mockReturnValue([
+      { key: "GITHUB_WORKSPACE_REPO", value: "owner/repo" },
+    ]);
     const app = createApp(deps);
 
     const payload = {
       vars: [
         { key: "OPENAI_API_KEY", value: "abc" },
         { key: "PORT", value: "3000" },
+        { key: "GITHUB_WORKSPACE_REPO", value: "changed/repo" },
       ],
     };
 
@@ -103,15 +110,22 @@ describe("server/routes/system", () => {
     expect(res.body).toEqual({ ok: true, changed: true, restartRequired: true });
     expect(deps.writeEnvFile).toHaveBeenCalledWith([
       { key: "OPENAI_API_KEY", value: "abc" },
+      { key: "GITHUB_WORKSPACE_REPO", value: "owner/repo" },
     ]);
     expect(deps.syncChannelConfig).toHaveBeenNthCalledWith(
       1,
-      [{ key: "OPENAI_API_KEY", value: "abc" }],
+      [
+        { key: "OPENAI_API_KEY", value: "abc" },
+        { key: "GITHUB_WORKSPACE_REPO", value: "owner/repo" },
+      ],
       "remove",
     );
     expect(deps.syncChannelConfig).toHaveBeenNthCalledWith(
       2,
-      [{ key: "OPENAI_API_KEY", value: "abc" }],
+      [
+        { key: "OPENAI_API_KEY", value: "abc" },
+        { key: "GITHUB_WORKSPACE_REPO", value: "owner/repo" },
+      ],
       "add",
     );
     expect(deps.restartGateway).not.toHaveBeenCalled();

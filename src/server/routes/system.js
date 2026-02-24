@@ -17,6 +17,7 @@ const registerSystemRoutes = ({
   OPENCLAW_DIR,
 }) => {
   let envRestartPending = false;
+  const kEnvVarsHiddenFromEnvarsTab = new Set(["GITHUB_WORKSPACE_REPO"]);
   const kSystemCronPath = "/etc/cron.d/openclaw-hourly-sync";
   const kSystemCronConfigPath = `${OPENCLAW_DIR}/cron/system-sync.json`;
   const kSystemCronScriptPath = `${OPENCLAW_DIR}/hourly-git-sync.sh`;
@@ -70,6 +71,7 @@ const registerSystemRoutes = ({
     const merged = [];
 
     for (const def of kKnownVars) {
+      if (kEnvVarsHiddenFromEnvarsTab.has(def.key)) continue;
       const fileEntry = fileVars.find((v) => v.key === def.key);
       const value = fileEntry?.value || "";
       merged.push({
@@ -105,16 +107,24 @@ const registerSystemRoutes = ({
       return res.status(400).json({ ok: false, error: "Missing vars array" });
     }
 
-    const filtered = vars.filter((v) => !kSystemVars.has(v.key));
-    syncChannelConfig(filtered, "remove");
-    writeEnvFile(filtered);
+    const filtered = vars.filter(
+      (v) =>
+        !kSystemVars.has(v.key) &&
+        !kEnvVarsHiddenFromEnvarsTab.has(v.key),
+    );
+    const existingLockedVars = readEnvFile().filter((v) =>
+      kEnvVarsHiddenFromEnvarsTab.has(v.key),
+    );
+    const nextEnvVars = [...filtered, ...existingLockedVars];
+    syncChannelConfig(nextEnvVars, "remove");
+    writeEnvFile(nextEnvVars);
     const changed = reloadEnv();
     if (changed && isOnboarded()) {
       envRestartPending = true;
     }
     const restartRequired = envRestartPending && isOnboarded();
-    console.log(`[wrapper] Env vars saved (${filtered.length} vars, changed=${changed})`);
-    syncChannelConfig(filtered, "add");
+    console.log(`[wrapper] Env vars saved (${nextEnvVars.length} vars, changed=${changed})`);
+    syncChannelConfig(nextEnvVars, "add");
 
     res.json({ ok: true, changed, restartRequired });
   });
@@ -165,7 +175,11 @@ const registerSystemRoutes = ({
   });
 
   app.post("/api/openclaw/update", async (req, res) => {
+    console.log("[wrapper] /api/openclaw/update requested");
     const result = await openclawVersionService.updateOpenclaw();
+    console.log(
+      `[wrapper] /api/openclaw/update result: status=${result.status} ok=${result.body?.ok === true}`,
+    );
     res.status(result.status).json(result.body);
   });
 
