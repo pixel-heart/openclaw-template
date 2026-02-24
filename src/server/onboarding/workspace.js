@@ -1,9 +1,32 @@
-const syncBootstrapPromptFiles = ({ fs, workspaceDir }) => {
+const resolveSetupUiUrl = (baseUrl) => {
+  const normalizedBaseUrl = String(baseUrl || "").trim().replace(/\/+$/, "");
+  if (normalizedBaseUrl) return normalizedBaseUrl;
+
+  const railwayPublicDomain = String(process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+  if (railwayPublicDomain) {
+    return `https://${railwayPublicDomain}`;
+  }
+
+  const railwayStaticUrl = String(process.env.RAILWAY_STATIC_URL || "").trim().replace(
+    /\/+$/,
+    "",
+  );
+  if (railwayStaticUrl) return railwayStaticUrl;
+
+  return "http://localhost:3000";
+};
+
+const syncBootstrapPromptFiles = ({ fs, workspaceDir, baseUrl }) => {
   try {
     const bootstrapDir = `${workspaceDir}/hooks/bootstrap`;
     fs.mkdirSync(bootstrapDir, { recursive: true });
     fs.copyFileSync("/app/setup/core-prompts/AGENTS.md", `${bootstrapDir}/AGENTS.md`);
-    fs.copyFileSync("/app/setup/core-prompts/TOOLS.md", `${bootstrapDir}/TOOLS.md`);
+    const toolsTemplate = fs.readFileSync("/app/setup/core-prompts/TOOLS.md", "utf8");
+    const toolsContent = toolsTemplate.replace(
+      /\{\{SETUP_UI_URL\}\}/g,
+      resolveSetupUiUrl(baseUrl),
+    );
+    fs.writeFileSync(`${bootstrapDir}/TOOLS.md`, toolsContent);
     console.log("[onboard] Bootstrap prompt files synced");
   } catch (e) {
     console.error("[onboard] Bootstrap prompt sync error:", e.message);

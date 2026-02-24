@@ -55,7 +55,7 @@ const createOnboardingService = ({
 
     fs.mkdirSync(OPENCLAW_DIR, { recursive: true });
     fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
-    syncBootstrapPromptFiles({ fs, workspaceDir: WORKSPACE_DIR });
+    syncBootstrapPromptFiles({ fs, workspaceDir: WORKSPACE_DIR, baseUrl: getBaseUrl(req) });
 
     if (!fs.existsSync(`${OPENCLAW_DIR}/.git`)) {
       await shellCmd(

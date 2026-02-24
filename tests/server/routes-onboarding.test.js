@@ -135,6 +135,7 @@ describe("server/routes/onboarding", () => {
     deps.fs.readFileSync.mockImplementation((path) => {
       if (path === "/tmp/openclaw/openclaw.json") return "{}";
       if (path === "/app/setup/skills/control-ui/SKILL.md") return "BASE={{BASE_URL}}";
+      if (path === "/app/setup/core-prompts/TOOLS.md") return "Setup: {{SETUP_UI_URL}}";
       if (path === "/app/setup/hourly-git-sync.sh") return "echo Auto-commit hourly sync";
       return "{}";
     });
@@ -152,10 +153,11 @@ describe("server/routes/onboarding", () => {
       "/app/setup/core-prompts/AGENTS.md",
       "/tmp/openclaw/workspace/hooks/bootstrap/AGENTS.md",
     );
-    expect(deps.fs.copyFileSync).toHaveBeenCalledWith(
-      "/app/setup/core-prompts/TOOLS.md",
-      "/tmp/openclaw/workspace/hooks/bootstrap/TOOLS.md",
+    const toolsWriteCall = deps.fs.writeFileSync.mock.calls.find(
+      ([path]) => path === "/tmp/openclaw/workspace/hooks/bootstrap/TOOLS.md",
     );
+    expect(toolsWriteCall).toBeTruthy();
+    expect(toolsWriteCall[1]).toContain("https://example.com");
 
     expect(deps.fs.writeFileSync).toHaveBeenCalledWith(
       "/tmp/openclaw/hourly-git-sync.sh",
