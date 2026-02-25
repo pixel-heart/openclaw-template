@@ -267,4 +267,56 @@ describe("server/routes/onboarding", () => {
       error: "Onboarding command failed. Please verify credentials and try again.",
     });
   });
+
+  it("returns a helpful OOM message when onboarding runs out of memory", async () => {
+    const deps = createBaseDeps();
+    const app = createApp(deps);
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    deps.shellCmd.mockRejectedValueOnce(
+      new Error("FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory"),
+    );
+
+    const res = await request(app).post("/api/onboard").send(makeValidBody());
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({
+      ok: false,
+      error:
+        "Onboarding ran out of memory. Please retry, and if it persists increase instance memory.",
+    });
+  });
+
+  it("returns a helpful GitHub permissions message for repo access failures", async () => {
+    const deps = createBaseDeps();
+    const app = createApp(deps);
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    const err = new Error("Command failed: openclaw onboard");
+    err.stderr = "remote: Permission to owner/repo denied to user";
+    deps.shellCmd.mockRejectedValueOnce(err);
+
+    const res = await request(app).post("/api/onboard").send(makeValidBody());
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({
+      ok: false,
+      error:
+        "GitHub access failed. Verify your token permissions and workspace repo, then try again.",
+    });
+  });
+
+  it("returns a helpful provider auth message for invalid credentials", async () => {
+    const deps = createBaseDeps();
+    const app = createApp(deps);
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    deps.shellCmd.mockRejectedValueOnce(new Error("invalid_api_key"));
+
+    const res = await request(app).post("/api/onboard").send(makeValidBody());
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({
+      ok: false,
+      error:
+        "Model provider authentication failed. Check your API key/token and try again.",
+    });
+  });
 });
