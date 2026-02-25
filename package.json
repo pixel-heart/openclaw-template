@@ -1,30 +1,19 @@
 {
   "name": "openclaw-railway",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "OpenClaw on Railway — one-click deploy",
+  "description": "OpenClaw on Railway — one-click deploy, powered by @chrysb/alphaclaw",
   "scripts": {
-    "start": "./scripts/setup.sh",
     "dev": "docker compose up --build",
     "dev:stop": "docker compose down",
     "dev:clean": "docker compose down -v",
     "dev:logs": "docker compose logs -f",
-    "dev:shell": "docker compose exec openclaw bash",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "dev:shell": "docker compose exec openclaw bash"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "http-proxy": "^1.18.1",
-    "openclaw": "latest"
+    "@chrysb/alphaclaw": "^0.1.0"
   },
   "engines": {
     "node": ">=22.12.0"
-  },
-  "devDependencies": {
-    "@vitest/coverage-v8": "^4.0.18",
-    "supertest": "^7.2.2",
-    "vitest": "^4.0.18"
   }
 }

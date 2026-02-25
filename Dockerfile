@@ -8,13 +8,10 @@ COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
 ENV PATH="/app/node_modules/.bin:$PATH"
-
-COPY . .
+ENV ALPHACLAW_ROOT_DIR=/data
 
 RUN mkdir -p /data
-RUN chmod +x scripts/setup.sh
-RUN cp scripts/systemctl /usr/local/bin/systemctl && chmod +x /usr/local/bin/systemctl
 
 EXPOSE 3000
 
-CMD ["./scripts/setup.sh"]
+CMD ["alphaclaw", "start"]
