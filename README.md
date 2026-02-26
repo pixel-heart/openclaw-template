@@ -173,23 +173,6 @@ Internet → Railway :3000 (Express)
 - **Restart**: Click "Restart" in the General tab — runs `openclaw gateway install --force` then `openclaw gateway restart`
 - **Channel sync**: Adding/removing channel tokens in the Envars tab automatically runs `openclaw channels add/remove`
 
-## Local development
-
-Run the full stack locally with Docker:
-
-```bash
-# Copy and fill in your env vars
-cp .env.example .env
-
-# Start the container
-docker compose up
-
-# Visit the setup UI
-open http://localhost:3000
-```
-
-Source files in `src/` and `scripts/` are mounted as volumes — edit locally and restart the container to pick up server changes. Client-side JS changes (`src/public/`) only need a browser refresh.
-
 ## Troubleshooting
 
 ### Pairing
