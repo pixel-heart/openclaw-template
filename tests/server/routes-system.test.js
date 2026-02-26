@@ -22,7 +22,12 @@ const createSystemDeps = () => {
       { key: "GITHUB_TOKEN", label: "GitHub Access Token", group: "github", hint: "" },
     ],
     kKnownKeys: new Set(["OPENAI_API_KEY", "GITHUB_TOKEN"]),
-    kSystemVars: new Set(["PORT", "SETUP_PASSWORD"]),
+    kSystemVars: new Set([
+      "PORT",
+      "SETUP_PASSWORD",
+      "OPENCLAW_STATE_DIR",
+      "OPENCLAW_WORKSPACE_DIR",
+    ]),
     syncChannelConfig: vi.fn(),
     isGatewayRunning: vi.fn(async () => true),
     isOnboarded: vi.fn(() => true),

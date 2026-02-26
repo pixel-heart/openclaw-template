@@ -7,10 +7,10 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 const GATEWAY_PORT = 18789;
 const GATEWAY_HOST = "127.0.0.1";
 const GATEWAY_URL = `http://${GATEWAY_HOST}:${GATEWAY_PORT}`;
-const OPENCLAW_DIR = "/data/.openclaw";
+const OPENCLAW_DIR = process.env.OPENCLAW_STATE_DIR || "/data/.openclaw";
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "";
 const ENV_FILE_PATH = "/data/.env";
-const WORKSPACE_DIR = `${OPENCLAW_DIR}/workspace`;
+const WORKSPACE_DIR = process.env.OPENCLAW_WORKSPACE_DIR || `${OPENCLAW_DIR}/workspace`;
 const AUTH_PROFILES_PATH = `${OPENCLAW_DIR}/agents/main/agent/auth-profiles.json`;
 const CODEX_PROFILE_ID = "openai-codex:codex-cli";
 const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -104,6 +104,8 @@ const kSystemVars = new Set([
   "OPENCLAW_GATEWAY_TOKEN",
   "SETUP_PASSWORD",
   "PORT",
+  "OPENCLAW_STATE_DIR",
+  "OPENCLAW_WORKSPACE_DIR",
 ]);
 const kKnownVars = [
   {

@@ -1,10 +1,10 @@
 #!/bin/bash
-# OpenClaw Railway setup — runs on every container start
+# OpenClaw container setup — runs on every container start
 set -e
 
 export OPENCLAW_HOME="/data"
-OPENCLAW_DIR="/data/.openclaw"
-WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
+OPENCLAW_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-${OPENCLAW_DIR}/workspace}"
 export OPENCLAW_CONFIG_PATH="$OPENCLAW_DIR/openclaw.json"
 
 # ============================================================

@@ -41,10 +41,11 @@ case "$ACTION" in
     fi
     ;;
   restart|stop)
+    STATE_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
     pkill -TERM -f "openclaw gateway" 2>/dev/null || true
     sleep 1
     pkill -9 -f "openclaw gateway" 2>/dev/null || true
-    rm -f /data/.openclaw/gateway.lock /data/.openclaw/gateway.pid 2>/dev/null
+    rm -f "$STATE_DIR/gateway.lock" "$STATE_DIR/gateway.pid" 2>/dev/null
     exit 0
     ;;
   start|enable|is-enabled|disable|daemon-reload|show)

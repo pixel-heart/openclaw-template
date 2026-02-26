@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="/data/.openclaw"
+REPO="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
 cd "$REPO"
 
 # Drop cron scheduler runtime-only churn when it is metadata/timestamp-only.
