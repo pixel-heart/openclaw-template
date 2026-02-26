@@ -19,7 +19,7 @@ Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegr
 
 ## Convenient Setup UI
 
-<img width="2526" height="1364" alt="image" src="https://github.com/user-attachments/assets/122b3ff4-b828-4785-8a05-f765d3ac5ea1" />
+<img width="1299" height="825" alt="image" src="https://github.com/user-attachments/assets/e8685a7b-eee6-491e-a5c1-f9a0cce8b788" />
 
 ## Deploy
 
