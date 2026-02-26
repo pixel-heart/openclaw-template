@@ -1,25 +1,25 @@
 **⚠️ This project is still under development, use at your own risk ⚠️**
 
-# OpenClaw Railway Template
+# AlphaClaw Railway Template
 
-Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegram or Discord, with your entire config and workspace backed up to GitHub.
+Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegram or Discord, with your entire config and workspace backed up to GitHub. No CLI required.
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/openclaw-fast-start?referralCode=jcFhp_&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
-## What you get
+## The AlphaClaw Advantage
 
 - **OpenClaw Gateway** running 24/7
 - **Everything version controlled** — config, cron jobs, workspace, and memory backed up to GitHub automatically
 - **Telegram or Discord** configured out of the box (add/remove channels anytime via the UI)
 - **Google Workspace integration** — connect Gmail, Calendar, Drive, Contacts, and Sheets with a few clicks via built-in OAuth flow
 - **Secrets never committed** — raw API keys are replaced with `${ENV_VAR}` references before pushing to GitHub
-- **Anti-drift prompts** — improve change visibility and reduce silent/partial edits so your OpenClaw project stays stable over time
+- **Prompt hardening** — improve change visibility and reduce silent/partial edits so your OpenClaw project stays stable over time
 - **Setup UI** — web-based onboarding, env var management, channel pairing, and gateway control
 - **Webhook proxy** — single exposed port handles both the setup UI and gateway webhooks
 
 ## Convenient Setup UI
 
-<img width="1299" height="825" alt="image" src="https://github.com/user-attachments/assets/e8685a7b-eee6-491e-a5c1-f9a0cce8b788" />
+<img width="5594" height="3646" alt="image" src="https://github.com/user-attachments/assets/6aa18214-5870-4e01-9ff4-b23e0353179e" />
 
 ## Deploy
 
