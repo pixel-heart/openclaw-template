@@ -1,7 +1,8 @@
-# OpenClaw Railway Template
+# OpenClaw Deployment Template
 
-Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegram or Discord, with your entire config and workspace backed up to GitHub.
+Deploy OpenClaw to Railway or Render in one click. Get a 24/7 AI agent connected to Telegram or Discord, with your entire config and workspace backed up to GitHub.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pixel-heart/openclaw-template)
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/_S3bQQ?referralCode=jcFhp_)
 
 ## What you get
@@ -20,24 +21,39 @@ Deploy OpenClaw to Railway in one click. Get a 24/7 AI agent connected to Telegr
 
 ## Deploy
 
-Only one variable is needed at deploy time:
+Only one variable is required at deploy time. The rest are generated or set by the platform:
 
 | Variable                 | Required    | Description                               |
 | ------------------------ | ----------- | ----------------------------------------- |
 | `SETUP_PASSWORD`         | ✅ Required | Password for the setup UI                 |
-| `OPENCLAW_GATEWAY_TOKEN` | 🔒 Auto     | Auto-generated, secures your gateway      |
-| `PORT`                   | 🔒 Auto     | Set by Railway                            |
+| `OPENCLAW_GATEWAY_TOKEN` | 🔒 Auto     | Render auto-generates; set manually on Railway |
+| `PORT`                   | ✅ Required | `8080` on Render and Railway              |
+| `OPENCLAW_STATE_DIR`     | 🔒 Auto     | Render sets to `/data/.openclaw`          |
+| `OPENCLAW_WORKSPACE_DIR` | 🔒 Auto     | Render sets to `/data/workspace`          |
 | `WEBHOOK_TOKEN`          | 🔒 Auto     | Auto-generated, secures webhook endpoints |
 
-Click the button to deploy:
+Click a button to deploy:
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pixel-heart/openclaw-template)
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/_S3bQQ?referralCode=jcFhp_)
 
 Everything else — AI keys, GitHub credentials, channel tokens — is configured through the setup UI after your first login.
 
+### Render
+
+The Render Blueprint (`render.yaml`) configures the service, disk, and required env vars automatically. You will be prompted to set `SETUP_PASSWORD` during deploy.
+
+### Railway
+
+After deploying on Railway, make sure these settings are in place:
+
+- Enable HTTP Proxy for the service on port `8080`
+- Attach a volume mounted at `/data`
+- Set variables: `SETUP_PASSWORD`, `PORT=8080`, `OPENCLAW_STATE_DIR=/data/.openclaw`, `OPENCLAW_WORKSPACE_DIR=/data/workspace`, and `OPENCLAW_GATEWAY_TOKEN`
+
 ## First-time setup
 
-After deploying, visit your Railway app URL (e.g. `https://your-app.up.railway.app`).
+After deploying, visit your app URL (e.g. `https://your-app.onrender.com` or `https://your-app.up.railway.app`).
 
 ### 1. Log in with your setup password
 
@@ -54,7 +70,7 @@ Each field includes instructions and links for how to get the value. Optional fi
 
 > **Model catalog note:** Models are discovered at runtime via `openclaw models list --all --json`. This keeps the setup UI aligned with the OpenClaw version installed in your deployment.
 >
-> **Versioning note:** Template builds intentionally install `openclaw@latest` during Docker build, so new Railway deploys pick up the newest OpenClaw release automatically.
+> **Versioning note:** Template builds intentionally install `openclaw@latest` during Docker build, so new deploys pick up the newest OpenClaw release automatically.
 >
 > **Codex OAuth note:** OpenClaw onboarding runs in non-interactive mode here. For OAuth-only Codex setups, the wrapper uses `--auth-choice skip` and then applies your selected `openai-codex/*` model after onboarding.
 
@@ -118,7 +134,7 @@ The server watches `/data/.env` for changes — including ones written by the Op
 ## Architecture
 
 ```
-Internet → Railway :3000 (Express)
+Internet → Render/Railway :$PORT (Express)
 ├── /                          → Setup UI (auth required)
 ├── /setup                     → Setup UI (auth required)
 ├── /api/status, /api/env ...  → Express handles (setup endpoints)
@@ -132,21 +148,24 @@ Internet → Railway :3000 (Express)
 ### File layout
 
 ```
-/data/.openclaw/           ← Railway volume + git repo
+/data/.openclaw/           ← Render disk or Railway volume + git repo
 ├── openclaw.json          ← Config (secrets → ${ENV_VAR} references)
 ├── skills/                ← Agent skills (control-ui installed on onboard)
 ├── cron/jobs.json         ← Scheduled tasks
 ├── .gitignore             ← Excludes keys, logs, caches
 ├── agents/                ← Session state
-└── workspace/             ← Agent workspace
+└── workspace/             ← Agent workspace (default)
     ├── hooks/bootstrap/   ← Deploy-synced prompt templates
     │   ├── AGENTS.md      ← Injected by bootstrap-extra-files
     │   └── TOOLS.md       ← Injected by bootstrap-extra-files
     ├── HEARTBEAT.md       ← Periodic check instructions
     └── memory/            ← Agent memory
 
+/data/workspace/           ← Render default workspace (via OPENCLAW_WORKSPACE_DIR)
 /data/.env                 ← Persistent env vars (managed via Setup UI)
 ```
+
+> **Workspace note:** If `OPENCLAW_WORKSPACE_DIR` is not set, the workspace stays in `/data/.openclaw/workspace`.
 
 ### First boot
 
@@ -186,6 +205,8 @@ open http://localhost:3000
 
 Source files in `src/` and `scripts/` are mounted as volumes — edit locally and restart the container to pick up server changes. Client-side JS changes (`src/public/`) only need a browser refresh.
 
+To mirror production, set `PORT=8080` in `.env` before running `docker compose up`.
+
 ## Troubleshooting
 
 ### Pairing
@@ -201,7 +222,7 @@ First time you DM the bot, it sends a pairing request. Approve it in the setup U
 
 ### Gateway won't start
 
-- Ensure the Railway volume is mounted at `/data`
+- Ensure a persistent disk/volume is mounted at `/data` (Render disk or Railway volume)
 - Check that AI provider credentials are valid
 - Check deploy logs for the specific error — common cause is a missing env var referenced in `openclaw.json`
 

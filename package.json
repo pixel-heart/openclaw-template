@@ -1,8 +1,8 @@
 {
-  "name": "openclaw-railway",
+  "name": "openclaw-template",
   "version": "1.0.0",
   "private": true,
-  "description": "OpenClaw on Railway — one-click deploy",
+  "description": "OpenClaw on Render or Railway — one-click deploy",
   "scripts": {
     "start": "./scripts/setup.sh",
     "dev": "docker compose up --build",
