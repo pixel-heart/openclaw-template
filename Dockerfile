@@ -15,6 +15,6 @@ RUN mkdir -p /data
 RUN chmod +x scripts/setup.sh
 RUN cp scripts/systemctl /usr/local/bin/systemctl && chmod +x /usr/local/bin/systemctl
 
-EXPOSE 3000
+EXPOSE 8080
 
 CMD ["./scripts/setup.sh"]
